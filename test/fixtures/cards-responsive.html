@@ -7,6 +7,9 @@
   @media (max-width: 10px) { .large-screen-btn { display: none; } .small-screen-btn { display: inline-block; } }
 </style></head>
 <body>
+  <!-- A hash-looking class on an element nothing matches: it must not make a stable
+       condition look unstable. -->
+  <div class="decoy--a1b2c3d4">装饰</div>
   <div class="talent-recommend">
     <div class="recommend-item recommend-resume-item resume-item-exp" data-index="0">
       <div class="talent-basic-info__title">饶先生</div>

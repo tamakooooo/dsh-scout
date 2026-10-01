@@ -103,6 +103,12 @@ try {
     // The card element itself, not just something that wraps one. The real page nests a single
     // card inside a wrapper, so the cards are siblings of nothing — and the wrapper group alone
     // satisfies "a group whose examples look like cards", which is why this names the element.
+    // Furniture must not be reported at all. The fixture carries ten image wrappers and sixteen
+    // empty spans, more than the records, and they used to outrank the cards.
+    assert.ok(
+      !sample.groups.some((entry) => /km-image|^span\|/.test(entry.signature)),
+      `furniture was reported as a group: ${JSON.stringify(sample.groups.map((g) => g.signature))}`,
+    );
     const cardElement = sample.groups.find((entry) => entry.signature.startsWith('li|'));
     assert.ok(cardElement, `the card element is not a group of its own: ${JSON.stringify(sample.groups.map((g) => [g.signature, g.count]))}`);
     assert.ok(cardElement.count >= 6, `the card group has ${cardElement.count} members`);

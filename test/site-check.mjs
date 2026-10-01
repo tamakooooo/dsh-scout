@@ -282,6 +282,10 @@ try {
       };
       const report = await check(session.cdp, session.sessionId, { config });
       assert.equal(report.matched, 2, `matched ${report.matched}`);
+      // The page carries an element whose class looks generated. That must not make a condition
+      // that matched a stable element look unstable: the warning fires on what matched, not on
+      // what happened to be scanned on the way past.
+      assert.deepEqual(report.unstableConditions, [], 'a stable condition was reported as unstable because of an unrelated element');
       assert.equal(report.ambiguous, 0, 'the hidden responsive variant was counted as an action target');
       assert.equal(report.canSend, true, JSON.stringify(report));
 
