@@ -21,6 +21,8 @@ import { DEFAULT_SUCCESS_PATTERNS, DEFAULT_FAILURE_PATTERNS } from './lib/verify
 import { DEFAULT_INJECTION_PATTERNS, scanForInjectedInstructions } from './lib/injection.js';
 import { Viewer } from './lib/viewer.js';
 import { Journal } from './lib/journal.js';
+import { Records } from './lib/records.js';
+import { Task } from './lib/task.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
 
@@ -186,11 +188,30 @@ export function apply(ctx, config) {
   // What the monitoring board reads: events appended when they happened, and one row per
   // run. Observed, never inferred.
   const journal = new Journal();
+  // What survives a run: who was contacted and what is known about how it went. One instance
+  // per plugin, because the account is one account and the guard has to see every window.
+  const records = new Records();
+  // The run itself: stop, pause, takeover, its windows, and the allowance it spends from.
+  const task = new Task({ config: resolved, sessions, records, pacing });
 
   const viewer = new Viewer({
     log: (message) => ctx.logger?.debug?.(`[jev-browser] ${message}`),
     ...createMonitor({ sessions, pacing, journal }),
     decide: (target, verdict, id) => {
+      // An authorisation request is answered here, and only here. No tool can approve one, so
+      // the board is the single path by which a standing permission comes into force.
+      const requested = task.requestedAuthorization;
+      if (requested && id === requested.id) {
+        if (verdict === 'grant') {
+          void task.approveAuthorization({ by: '看板' })
+            .then(() => journal.record('authorization-grant', { account: requested.account, posting: requested.posting, limit: requested.limit }))
+            .catch((error) => journal.record('authorization-error', { message: error.message }));
+        } else {
+          const denied = task.denyAuthorization('看板拒绝了这次授权');
+          journal.record('authorization-deny', { account: denied.denied?.account, posting: denied.denied?.posting, reason: denied.reason });
+        }
+        return true;
+      }
       if (verdict === 'grant') {
         if (!pacing.grant(target, 900000, id)) return false;
         journal.record('grant', { target, via: '看板' });
@@ -202,7 +223,7 @@ export function apply(ctx, config) {
     },
   });
 
-  for (const definition of buildTools({ ctx, config: resolved, sessions, pacing, viewer, journal })) {
+  for (const definition of buildTools({ ctx, config: resolved, sessions, pacing, viewer, journal, records, task })) {
     ctx.tools.register(definition);
   }
 
@@ -249,4 +270,9 @@ export function apply(ctx, config) {
     () => () => (resolved.keepBrowserOnUnload ? sessions.detachAll() : sessions.closeAll()),
     'jev-browser sessions',
   );
+
+  // A handle on what this instance built. The board and the tests both need to reach the same
+  // task the tools use: an authorisation approved on a different object would be a grant that
+  // nothing consults, which is exactly the failure this wiring exists to prevent.
+  return { sessions, pacing, journal, records, task, viewer };
 }
