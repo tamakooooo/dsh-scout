@@ -139,7 +139,15 @@ try {
     // Two spans per card, so the card-level action cannot resolve to exactly one.
     config.actions.probe = { scope: 'card', type: 'read', locator: { tag: 'span' } };
     const report = await at(config);
+    // Counted as cards, not as (card, action) pairs: two unsettled actions on one card is
+    // still one unsafe record.
     assert.equal(report.ambiguous, 6, `ambiguous was ${report.ambiguous}`);
+
+    const doubled = JSON.parse(JSON.stringify(config));
+    doubled.actions.also = { scope: 'card', type: 'read', locator: { tag: 'button' } };
+    doubled.actions.also.locator = { tag: 'span', text: { contains: '先生' } };
+    const two = await at(doubled);
+    assert.equal(two.ambiguous, 6, `two unsettled actions per card counted ${two.ambiguous}`);
     assert.equal(report.verdict, 'degraded');
     assert.equal(report.canSend, false, 'ambiguity did not block sending');
   });
