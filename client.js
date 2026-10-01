@@ -42,6 +42,11 @@ window.__ModuleLoader__.load({
       '.jev-msg-text{font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}',
       '.jev-detail{flex:0 0 auto;max-height:46%;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px}',
       '.jev-chat-input{resize:none;font:inherit}',
+      // The chat panel lives in the right sidebar now, so it brings its own full-height column.
+      '.jev-chatpanel{height:100%;display:flex;flex-direction:column;overflow:hidden;font-size:13px;color:var(--dsw-alias-label-primary)}',
+      '.jev-chatlist{flex:1 1 auto;min-height:0;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}',
+      '.jev-scroll{overflow-y:auto}',
+      '.jev-statsbox{display:flex;flex-wrap:wrap;gap:6px}',
       // One chip per platform. Four pools, four counts; the live one is marked, never assumed.
       '.jev-platforms{display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);overflow-x:auto;flex:0 0 auto}',
       '.jev-platform{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);font-size:12px;white-space:nowrap;color:var(--dsw-alias-label-secondary)}',
@@ -149,6 +154,132 @@ window.__ModuleLoader__.load({
     }
 
     /** The board page: monitor, pending decision, and the run's own account of itself. */
+    /**
+     * The conversation, as a tab in the right sidebar.
+     *
+     * Kept out of the board on purpose: the board is for watching the browser work, and a
+     * conversation you are having wants its own column rather than a strip at the foot of a
+     * dashboard. The tab sits on a session-scoped slot, so the session on screen is passed in
+     * and used — better than the panel asking the Host which conversation was most recently
+     * active, which is what it had to do while it lived on a shell-wide slot.
+     */
+    function Chat(props) {
+      const propsSessionId = typeof props?.sessionId === 'string' ? props.sessionId : '';
+      const [text, setText] = React.useState('');
+      const [busy, setBusy] = React.useState(false);
+      const [note, setNote] = React.useState('');
+      const [log, setLog] = React.useState([]);
+      const [status, setStatus] = React.useState('');
+      const [streamedSession, setStreamedSession] = React.useState('');
+      const listRef = React.useRef(null);
+      const sessionId = propsSessionId || streamedSession;
+
+      // The transcript, streamed. EventSource reconnects on its own and a reconnect replays the
+      // recent messages, so the same one can arrive twice: the duplicate is dropped rather than
+      // showing the conversation twice.
+      React.useEffect(() => {
+        if (!MOUNT) return undefined;
+        const query = propsSessionId ? '?sessionId=' + encodeURIComponent(propsSessionId) : '';
+        const source = new EventSource(MOUNT + '/chat/stream' + query);
+        source.onmessage = (event) => {
+          let frame;
+          try { frame = JSON.parse(event.data); } catch { return; }
+          if (frame.kind === 'message') {
+            setLog((previous) => (previous.some((m) => m.id === frame.message.id)
+              ? previous
+              : previous.concat([frame.message]).slice(-200)));
+          } else if (frame.kind === 'status') {
+            setStatus(frame.text || '');
+          } else if (frame.kind === 'session') {
+            setStreamedSession(frame.sessionId || '');
+          } else if (frame.kind === 'end') {
+            setStatus(frame.ignored ? '已连接（' + frame.ignored + ' 条事件未识别）' : '');
+          } else if (frame.kind === 'error') {
+            setStatus('读取失败：' + frame.text);
+          }
+        };
+        source.onerror = () => setStatus('读取中断，正在重试…');
+        return () => source.close();
+      }, [propsSessionId]);
+
+      // Keep the newest message in view.
+      React.useEffect(() => {
+        const element = listRef.current;
+        if (element) element.scrollTop = element.scrollHeight;
+      }, [log.length, status]);
+
+      const send = () => {
+        const message = text.trim();
+        if (message === '' || busy) return;
+        setBusy(true);
+        setNote('');
+        fetch(MOUNT + '/chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(propsSessionId ? { text: message, sessionId: propsSessionId } : { text: message }),
+        })
+          .then(async (response) => {
+            if (!response.ok) throw new Error((await response.text()) || ('HTTP ' + response.status));
+            return response.json();
+          })
+          .then((sent) => {
+            setText('');
+            setNote(sent.accepted ? '' : '已提交，但 Host 没有确认收到');
+          })
+          .catch((error) => setNote('发送失败：' + String(error && error.message ? error.message : error)))
+          .then(() => setBusy(false));
+      };
+
+      return h('div', { className: 'jev-chatpanel' }, [
+        h('div', { className: 'jev-chatlist', key: 'l', ref: listRef }, [
+          log.length === 0
+            ? h('div', { className: 'jev-dim', key: 'e', style: { padding: '12px' } },
+                status || '还没有对话。在下面说点什么，回复会出现在这里。')
+            : log.map((message) => h('div', { className: 'jev-msg ' + message.role, key: message.id }, [
+                h('div', { className: 'jev-msg-role', key: 'r' }, message.role === 'user' ? '我' : 'AI'),
+                h('div', { className: 'jev-msg-text', key: 't' }, message.text),
+              ])),
+        ]),
+        status && log.length > 0
+          ? h('div', { className: 'jev-chat-note', key: 's', style: { padding: '0 10px 4px' } }, status)
+          : null,
+        h('div', { className: 'jev-chat', key: 'c' }, [
+          h('div', { className: 'jev-chat-row', key: 'r' }, [
+            h('textarea', {
+              key: 'i',
+              className: 'jev-chat-input',
+              rows: 2,
+              value: text,
+              disabled: busy,
+              placeholder: '说点什么，回车发送（Shift+回车换行）…',
+              'aria-label': '给 AI 的消息',
+              onChange: (event) => setText(event.target.value),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  send();
+                }
+              },
+            }),
+            h('button', {
+              key: 'b',
+              className: 'jev-btn primary',
+              disabled: busy || text.trim() === '',
+              onClick: send,
+            }, busy ? '…' : '发送'),
+          ]),
+          h('div', { className: 'jev-chat-note', key: 'n' },
+            note || (sessionId ? '对话 ' + sessionId.slice(0, 8) : '回车发送')),
+        ]),
+      ]);
+    }
+
+    /**
+     * The board: the browser's own picture, and the numbers that describe what it is doing.
+     *
+     * This is the main panel, so the live frame gets the room and the data sits to its right.
+     * The conversation is not here — it is a tab of its own in the right sidebar.
+     */
     function Page() {
       const [state, setState] = React.useState(null);
       const [error, setError] = React.useState('');
@@ -156,47 +287,6 @@ window.__ModuleLoader__.load({
       const [watch, setWatch] = React.useState('');
       const [frame, setFrame] = React.useState({ url: '', at: 0, empty: false });
       const [now, setNow] = React.useState(Date.now());
-      const [chatText, setChatText] = React.useState('');
-      const [chatBusy, setChatBusy] = React.useState(false);
-      const [chatNote, setChatNote] = React.useState('');
-      // The exchange itself. Kept here rather than fetched, because it arrives as it happens.
-      const [chatLog, setChatLog] = React.useState([]);
-      const [chatStatus, setChatStatus] = React.useState('');
-      const [chatSession, setChatSession] = React.useState('');
-      const [showDetail, setShowDetail] = React.useState(false);
-      const listRef = React.useRef(null);
-
-      // The transcript, streamed. EventSource reconnects on its own, and a reconnect replays the
-      // recent messages, so the same message can arrive twice: drops the duplicate rather than
-      // showing the conversation twice. (The Host has the same rule in lib/transcript.js; the
-      // client bundle cannot import from it, so it is three lines here instead of a build step.)
-      React.useEffect(() => {
-        if (!MOUNT) return undefined;
-        const source = new EventSource(MOUNT + '/chat/stream');
-        source.onmessage = (e) => {
-          let frame;
-          try { frame = JSON.parse(e.data); } catch { return; }
-          if (frame.kind === 'message') {
-            setChatLog((prev) => (prev.some((m) => m.id === frame.message.id) ? prev : prev.concat([frame.message]).slice(-200)));
-          } else if (frame.kind === 'status') {
-            setChatStatus(frame.text || '');
-          } else if (frame.kind === 'session') {
-            setChatSession(frame.sessionId || '');
-          } else if (frame.kind === 'end') {
-            setChatStatus(frame.ignored ? '已连接（' + frame.ignored + ' 条事件未识别）' : '');
-          } else if (frame.kind === 'error') {
-            setChatStatus('读取失败：' + frame.text);
-          }
-        };
-        source.onerror = () => setChatStatus('读取中断，正在重试…');
-        return () => source.close();
-      }, []);
-
-      // Keep the newest message in view.
-      React.useEffect(() => {
-        const el = listRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      }, [chatLog.length, chatStatus]);
 
       // `watch` names the session to look at; empty lets the host half choose one (a session
       // waiting for a decision wins, then `default`).
@@ -215,11 +305,11 @@ window.__ModuleLoader__.load({
         return () => { alive = false; clearInterval(id); clearInterval(tick); };
       }, [watch]);
 
-      // The live view. Every capture is taken fresh, so the frame is polled — and preloaded:
-      // the next image is only swapped in once it has decoded, which keeps the previous frame
-      // on screen instead of flashing an empty box between captures. The next poll is chained
-      // rather than fixed-interval, so a slow capture cannot stack requests up, and polling
-      // stops while the page is hidden: nobody is looking, and a capture is real work.
+      // The live view. Every capture is taken fresh, so the frame is polled — and preloaded: the
+      // next image is only swapped in once it has decoded, which keeps the previous frame on
+      // screen instead of flashing an empty box between captures. The next poll is chained rather
+      // than fixed-interval, so a slow capture cannot stack requests up, and polling stops while
+      // the page is hidden: nobody is looking, and a capture is real work.
       React.useEffect(() => {
         let alive = true;
         let timer = null;
@@ -240,14 +330,8 @@ window.__ModuleLoader__.load({
       const events = (state && state.events) || [];
       const sessions = (state && state.sessions) || [];
       const task = (state && state.task) || null;
-      // The four platforms, each with its own count. Empty until the first state arrives, and
-      // empty is shown as nothing rather than as four zeroes.
       const platforms = (state && state.platforms) || [];
       const tabs = (state && state.tabs) || [];
-      // One stop per session: with several sessions working, several can be waiting at once,
-      // and each one has its own decision id — so every stop is rendered and answered
-      // separately. `state.pending` is the newest of them, kept for an older host half.
-      // The freshest thing the run did, so the picture and the log agree at a glance.
       const lastAction = (() => {
         const last = events.find((event) => event.kind === 'action');
         if (!last) return '';
@@ -258,8 +342,6 @@ window.__ModuleLoader__.load({
         ? state.pendings
         : (state && state.pending ? [state.pending] : []);
 
-      // The board's controls call the same task the tools call, so a stop from this page and a
-      // stop from the conversation are one stop.
       const control = (action, worker, reason) => {
         setBusy(true);
         fetch(MOUNT + '/control', {
@@ -270,33 +352,6 @@ window.__ModuleLoader__.load({
           .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); })
           .catch((e) => setError(String(e && e.message ? e.message : e)))
           .then(() => setBusy(false));
-      };
-
-      // Send one message into the conversation. The reply does not come back here — it renders
-      // in the conversation panel, which is where that conversation lives — so the note under
-      // the box says where to look rather than leaving someone waiting on this panel.
-      const sendChat = () => {
-        const text = chatText.trim();
-        if (text === '' || chatBusy) return;
-        setChatBusy(true);
-        setChatNote('');
-        fetch(MOUNT + '/chat', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text }),
-        })
-          .then(async (r) => {
-            if (!r.ok) throw new Error((await r.text()) || ('HTTP ' + r.status));
-            return r.json();
-          })
-          .then((sent) => {
-            setChatText('');
-            setChatNote(sent.accepted
-              ? '已发送到 ' + (sent.session || sent.sessionId || '当前对话')
-              : '已提交，但 Host 没有确认收到');
-          })
-          .catch((e) => setChatNote('发送失败：' + String(e && e.message ? e.message : e)))
-          .then(() => setChatBusy(false));
       };
 
       const decide = (stop, verdict) => {
@@ -317,128 +372,111 @@ window.__ModuleLoader__.load({
         h('div', { className: 'jev-head', key: 'head' }, [
           h('span', { className: 'jev-title', key: 't' }, '招聘工作台'),
           h('span', { className: 'jev-dim', key: 'u' }, state && state.status ? state.status : '连接中…'),
-          h('button', { key: 'd', className: 'jev-btn', onClick: () => setShowDetail((v) => !v) },
-            showDetail ? '收起详情' : '详情'),
+          sessions.length > 1
+            ? h('span', { className: 'jev-dim', key: 's' }, '会话 ' + (state.selectedSession || '—'))
+            : null,
         ]),
 
-        // Which platform is on screen, and what each one has on file. A run belongs to one of
-        // them, so a total here would be a number about four different things.
-        platforms.length
-          ? h('div', { className: 'jev-platforms', key: 'platforms' }, platforms.map((p) => h('span', {
-              key: p.id,
-              className: 'jev-platform' + (p.live ? ' live' : ''),
-              title: p.live ? '浏览器当前就在这个平台' : (p.contacts > 0 ? p.contacts + ' 条联系记录' : '还没有记录'),
-            }, [
-              p.live ? h('span', { key: 'd' }, '●') : null,
-              h('span', { key: 'n' }, p.name),
-              h('span', { className: 'n', key: 'c' }, String(p.contacts ?? 0)),
-              p.state && p.state !== 'idle' ? h('span', { key: 's' }, ' ' + p.state) : null,
-            ])))
-          : null,
-
-        // The only things that cannot proceed without a person, on one line each, above the
-        // conversation. Everything else moved behind the detail toggle, but these would be a
-        // silent stall if they moved with it.
-        task && task.requestedAuthorization
-          ? h('div', { className: 'jev-bar warn', key: 'auth' }, [
-              h('span', { key: 't' }, '授权请求 · ' + task.requestedAuthorization.actions.join('、') +
-                ' · 上限 ' + task.requestedAuthorization.limit + ' 次 · ' + task.requestedAuthorization.posting),
-              h('button', { key: 'g', className: 'jev-btn primary', disabled: busy,
-                onClick: () => decide({ id: task.requestedAuthorization.id }, 'grant') }, '批准授权'),
-              h('button', { key: 'd', className: 'jev-btn', disabled: busy,
-                onClick: () => decide({ id: task.requestedAuthorization.id }, 'deny') }, '拒绝'),
-            ])
-          : null,
-        pendings.length
-          ? h('div', { className: 'jev-bar warn', key: 'pending' }, [
-              h('span', { key: 't' }, '等待批准的动作 ' + pendings.length + ' 个 · ' + (pendings[0].target || '')),
-              h('button', { key: 'g', className: 'jev-btn primary', disabled: busy,
-                onClick: () => decide(pendings[0], 'grant') }, '批准这一个'),
-            ])
-          : null,
-        task
-          ? h('div', { className: 'jev-bar', key: 'task' }, [
-              h('span', { key: 't' }, '任务 ' + task.state +
-                (task.account ? ' · ' + task.account : '') +
-                ' · 已联系 ' + task.spend.spent + ' / ' + task.spend.limit),
-              task.state === 'running'
-                ? h('button', { key: 's', className: 'jev-btn', disabled: busy, onClick: () => control('stop') }, '统一停止')
-                : null,
-            ])
-          : null,
-
-        // The conversation is the page now: what was said, and what is coming back.
-        h('div', { className: 'jev-convo', key: 'convo', ref: listRef }, [
-          chatLog.length === 0
-            ? h('div', { className: 'jev-dim', key: 'empty' },
-                chatStatus || '还没有对话。在下面说点什么，回复会出现在这里。')
-            : chatLog.map((m) => h('div', { className: 'jev-msg ' + m.role, key: m.id }, [
-                h('div', { className: 'jev-msg-role', key: 'r' }, m.role === 'user' ? '我' : 'AI'),
-                h('div', { className: 'jev-msg-text', key: 't' }, m.text),
-              ])),
-        ]),
-        chatStatus && chatLog.length > 0
-          ? h('div', { className: 'jev-chat-note', key: 'st', style: { padding: '0 12px 4px' } },
-              chatStatus + (chatSession ? '　·　' + chatSession : ''))
-          : null,
-
-        h('div', { className: 'jev-chat', key: 'chat' }, [
-          h('div', { className: 'jev-chat-row', key: 'r' }, [
-            h('textarea', {
-              key: 'i',
-              className: 'jev-chat-input',
-              rows: 2,
-              value: chatText,
-              disabled: chatBusy,
-              placeholder: '说点什么，回车发送（Shift+回车换行）…',
-              'aria-label': '给 AI 的消息',
-              onChange: (e) => setChatText(e.target.value),
-              onKeyDown: (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendChat();
-                }
-              },
-            }),
-            h('button', {
-              key: 'b',
-              className: 'jev-btn primary',
-              disabled: chatBusy || chatText.trim() === '',
-              onClick: sendChat,
-            }, chatBusy ? '发送中…' : '发送'),
-          ]),
-          h('div', { className: 'jev-chat-note', key: 'n' },
-            chatNote || (chatSession ? '对话 ' + chatSession : '回车发送')),
-        ]),
-
-        // Kept, not dropped: the live frame, the counters, the sessions and the activity trail,
-        // behind one toggle so the default view can be just the conversation.
-        showDetail
-          ? h('div', { className: 'jev-detail', key: 'detail' }, [
-              h('div', { className: 'jev-frame', key: 'f' },
-                frame.url && !frame.empty
-                  ? h('img', { src: frame.url, alt: '浏览器实况' })
-                  : h('span', { className: 'jev-dim' },
-                      error ? '无法读取看板状态：' + error
-                        : state && state.live ? '正在取画面…' : '没有可看的页面')),
-              h('div', { className: 'jev-meta', key: 'm' }, [
-                h('div', { key: 'live' }, [
-                  h('span', { className: 'jev-dot' + (frame.url && !frame.empty ? ' on' : ''), key: 'd' }),
-                  h('span', { key: 't' }, frame.url && !frame.empty ? '实时画面 · ' + ago(now - frame.at) + '更新' : '等待画面'),
-                  h('span', { className: 'jev-dim', key: 's' }, lastAction ? '　最近动作：' + lastAction : ''),
-                ]),
-                h('div', { key: 'u' }, (state && state.url) || '—'),
-                h('div', { key: 'h' }, (state && state.health) || ''),
-                h('div', { key: 'p' }, (state && state.pacing) || ''),
-                tabs.length
-                  ? h('div', { className: 'jev-tabs', key: 't' }, tabs.map((tab) => h(
-                      'span',
-                      { className: 'jev-tab' + (tab.active ? ' active' : ''), key: tab.index, title: tab.url },
-                      tab.index + '. ' + (tab.title || tab.url || ''),
-                    )))
-                  : null,
+        h('div', { className: 'jev-body', key: 'body' }, [
+          h('div', { className: 'jev-left', key: 'l' }, [
+            h('div', { className: 'jev-frame', key: 'f' },
+              frame.url && !frame.empty
+                ? h('img', { src: frame.url, alt: '浏览器实况' })
+                : h('span', { className: 'jev-dim' },
+                    error ? '无法读取看板状态：' + error
+                      : state && state.live ? '正在取画面…' : '没有可看的页面（画面可能不可用）')),
+            h('div', { className: 'jev-meta', key: 'm' }, [
+              h('div', { key: 'live' }, [
+                h('span', { className: 'jev-dot' + (frame.url && !frame.empty ? ' on' : ''), key: 'd' }),
+                h('span', { key: 't' }, frame.url && !frame.empty ? '实时画面 · ' + ago(now - frame.at) + '更新' : '等待画面'),
+                h('span', { className: 'jev-dim', key: 's' }, lastAction ? '　最近动作：' + lastAction : ''),
               ]),
-              h('div', { className: 'jev-meta', key: 'stats' }, [
+              h('div', { key: 'u' }, (state && state.url) || '—'),
+              h('div', { key: 'h' }, (state && state.health) || ''),
+              h('div', { key: 'p' }, (state && state.pacing) || ''),
+              tabs.length
+                ? h('div', { className: 'jev-tabs', key: 't' }, tabs.map((tab) => h(
+                    'span',
+                    { className: 'jev-tab' + (tab.active ? ' active' : ''), key: tab.index, title: tab.url },
+                    tab.index + '. ' + (tab.title || tab.url || ''),
+                  )))
+                : null,
+            ]),
+          ]),
+
+          h('div', { className: 'jev-right jev-scroll', key: 'r' }, [
+            // Which platform is on screen, and what each one has on file. Four pools, four counts.
+            platforms.length
+              ? h('div', { className: 'jev-sec', key: 'plat' }, [
+                  h('h3', { key: 'h' }, '平台'),
+                  platforms.map((platform) => h('div', { className: 'jev-row', key: platform.id }, [
+                    h('span', { key: 'd', style: { marginRight: '6px' } }, platform.live ? '●' : '○'),
+                    h('span', { key: 'n', style: { marginRight: 'auto' } }, platform.name),
+                    h('span', { className: 'jev-dim', key: 'c' },
+                      platform.contacts + ' 条' + (platform.state && platform.state !== 'idle' ? ' · ' + platform.state : '')),
+                  ])),
+                ])
+              : null,
+
+            // The only things that cannot proceed without a person.
+            task && task.requestedAuthorization
+              ? h('div', { className: 'jev-sec', key: 'auth' }, [
+                  h('h3', { key: 'h' }, '等待你批准的授权'),
+                  h('div', { className: 'jev-dim', key: 'w' },
+                    task.requestedAuthorization.actions.join('、') + ' · 上限 ' + task.requestedAuthorization.limit +
+                    ' 次 · ' + (task.requestedAuthorization.account || '')),
+                  h('div', { style: { marginTop: '6px', display: 'flex', gap: '6px' }, key: 'b' }, [
+                    h('button', { className: 'jev-btn primary', disabled: busy, key: 'g',
+                      onClick: () => decide({ id: task.requestedAuthorization.id }, 'grant') }, '批准授权'),
+                    h('button', { className: 'jev-btn', disabled: busy, key: 'd',
+                      onClick: () => decide({ id: task.requestedAuthorization.id }, 'deny') }, '拒绝'),
+                  ]),
+                ])
+              : null,
+            pendings.length
+              ? h('div', { className: 'jev-sec', key: 'pend' }, [
+                  h('h3', { key: 'h' }, pendings.length > 1 ? '待批准的动作 (' + pendings.length + ')' : '待批准的动作'),
+                  pendings.map((stop) => h('div', { className: 'jev-pending', key: stop.id, style: { marginBottom: '6px' } }, [
+                    h('div', { key: 't' }, stop.target),
+                    h('div', { className: 'jev-dim', key: 'g' }, (stop.session || '') + (stop.goal ? ' · ' + stop.goal : '')),
+                    h('div', { style: { marginTop: '6px', display: 'flex', gap: '6px' }, key: 'b' }, [
+                      h('button', { className: 'jev-btn primary', disabled: busy, onClick: () => decide(stop, 'grant'), key: 'g' }, '批准这一步'),
+                      h('button', { className: 'jev-btn', disabled: busy, onClick: () => decide(stop, 'deny'), key: 'd' }, '拒绝'),
+                    ]),
+                  ])),
+                ])
+              : null,
+
+            h('div', { className: 'jev-sec', key: 'task' }, [
+              h('h3', { key: 'h' }, '招聘任务'),
+              task
+                ? h('div', { key: 'b' }, [
+                    h('div', { key: 'state' }, task.state +
+                      (task.platform ? ' · ' + task.platform : '') +
+                      (task.account ? ' · ' + task.account : '') +
+                      (task.posting ? ' · ' + task.posting : '')),
+                    h('div', { className: 'jev-dim', key: 'spend' },
+                      '联系 ' + task.spend.spent + ' / ' + task.spend.limit + '（余 ' + task.spend.remaining + '）'),
+                    task.windows && task.windows.length > 0
+                      ? h('div', { key: 'w', style: { marginTop: '6px' } }, task.windows.map((window) => h('div', { className: 'jev-row', key: window.name }, [
+                          h('span', { key: 'n', style: { marginRight: '6px' } }, window.name),
+                          h('span', { className: 'jev-dim', key: 'd' }, window.state + (window.candidate ? ' · ' + window.candidate : '')),
+                        ])))
+                      : null,
+                    task.state === 'running'
+                      ? h('div', { style: { marginTop: '8px', display: 'flex', gap: '6px' }, key: 'ctl' }, [
+                          h('button', { className: 'jev-btn', disabled: busy, key: 's', onClick: () => control('stop') }, '统一停止'),
+                          h('button', { className: 'jev-btn', disabled: busy, key: 'p', onClick: () => control('pause', 'w1') }, '暂停 w1'),
+                          h('button', { className: 'jev-btn', disabled: busy, key: 'r', onClick: () => control('resume', 'w1') }, '继续 w1'),
+                        ])
+                      : null,
+                  ])
+                : h('div', { className: 'jev-dim', key: 'none' }, '没有正在运行的任务'),
+            ]),
+
+            h('div', { className: 'jev-sec', key: 'stats' }, [
+              h('h3', { key: 'h' }, '数据'),
+              h('div', { className: 'jev-statsbox' }, [
                 h(Stat, { key: 'v', label: '已验证', value: total.verified || 0, tone: total.verified ? 'ok' : '' }),
                 h(Stat, { key: 'u', label: '结果未确认', value: total.unconfirmed || 0, tone: total.unconfirmed ? 'warn' : '' }),
                 h(Stat, { key: 'r', label: '页面否定', value: total.refused || 0, tone: total.refused ? 'bad' : '' }),
@@ -448,42 +486,44 @@ window.__ModuleLoader__.load({
                 h(Stat, { key: 'n', label: '运行/步数', value: (total.runs || 0) + ' / ' + (total.steps || 0) }),
                 h(Stat, { key: 'c', label: '决策 token', value: (total.tokensIn || 0) + (total.tokensOut || 0) }),
               ]),
-              h('div', { className: 'jev-sec', key: 's' }, [
-                h('h3', { key: 'h' }, '会话' + (sessions.length > 1 ? '（点一个看它的实时画面）' : '')),
-                sessions.length
-                  ? h('div', { key: 'l' }, sessions.map((s) => h('div', {
-                      key: s.name,
-                      className: 'jev-row jev-pick' + (s.name === (state.selectedSession || '') ? ' on' : ''),
-                      title: '看这个会话的实时画面',
-                      onClick: () => setWatch(s.name),
-                    }, [
-                      h('span', { key: 'n', style: { marginRight: '6px' } },
-                        (s.name === (state.selectedSession || '') ? '● ' : '') + s.name),
-                      h('span', { className: 'jev-dim', key: 'd' },
-                        s.origin + ' · ' + s.tabs + ' 标签 · ' + s.actions + ' 动作 · 空闲 ' + ago(s.idleMs)),
-                    ])))
-                  : h('div', { className: 'jev-dim', key: 'n' }, '没有会话'),
-              ]),
-              h('div', { className: 'jev-sec', key: 'r' }, [
-                h('h3', { key: 'h' }, '最近运行'),
-                (state && state.runs && state.runs.length)
-                  ? h('div', { key: 'l' }, state.runs.slice(0, 4).map((run, i) => h('div', { className: 'jev-row', key: i }, [
-                      h('span', { className: 'jev-t', key: 't' }, clock(run.at)),
-                      h('span', { key: 's' }, run.status + ' · ' + run.steps + ' 步'),
-                      h('span', { className: 'jev-dim', key: 'g' }, ' ' + (run.goal || '').slice(0, 40)),
-                    ])))
-                  : h('div', { className: 'jev-dim', key: 'n' }, '还没有运行'),
-              ]),
-              h('div', { className: 'jev-feed', key: 'feed' }, [
-                h('h3', { key: 'h', style: { margin: '0 0 6px', fontSize: '12px', color: 'var(--dsw-alias-label-secondary)' } }, '活动轨迹'),
-                h(Feed, { events, key: 'l' }),
-              ]),
-            ])
-          : null,
+            ]),
+
+            sessions.length > 1
+              ? h('div', { className: 'jev-sec', key: 'sess' }, [
+                  h('h3', { key: 'h' }, '会话（点一个看它的画面）'),
+                  sessions.map((session) => h('div', {
+                    key: session.name,
+                    className: 'jev-row jev-pick' + (session.name === (state.selectedSession || '') ? ' on' : ''),
+                    onClick: () => setWatch(session.name),
+                  }, [
+                    h('span', { key: 'n', style: { marginRight: '6px' } },
+                      (session.name === (state.selectedSession || '') ? '● ' : '') + session.name),
+                    h('span', { className: 'jev-dim', key: 'd' },
+                      session.origin + ' · ' + session.tabs + ' 标签 · ' + session.actions + ' 动作'),
+                  ])),
+                ])
+              : null,
+
+            h('div', { className: 'jev-sec', key: 'runs' }, [
+              h('h3', { key: 'h' }, '最近运行'),
+              (state && state.runs && state.runs.length)
+                ? state.runs.slice(0, 4).map((run, i) => h('div', { className: 'jev-row', key: i }, [
+                    h('span', { className: 'jev-t', key: 't' }, clock(run.at)),
+                    h('span', { key: 's' }, run.status + ' · ' + run.steps + ' 步'),
+                  ]))
+                : h('div', { className: 'jev-dim', key: 'n' }, '还没有运行'),
+            ]),
+
+            h('div', { className: 'jev-sec', key: 'feed' }, [
+              h('h3', { key: 'h' }, '活动轨迹'),
+              h(Feed, { events, key: 'l' }),
+            ]),
+          ]),
+        ]),
       ]);
     }
 
-    /** The sidebar glyph. The host supplies the square edge and the selected state. */
+/** The sidebar glyph. The host supplies the square edge and the selected state. */
     function Icon({ size, active }) {
       const s = size || 20;
       return h(
@@ -515,6 +555,17 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('main', () => ctx.slots.register(
           { name: 'main', key: ID },
           Page,
+        ));
+        // The conversation is a tab of the right sidebar, not a strip at the foot of the board:
+        // watching the browser and talking about it are two things, and the slot it sits on is
+        // session-scoped, so the session on screen is passed in rather than guessed.
+        ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+          { name: 'sidebar.right.pane.tab', key: ID },
+          Chat,
+        ));
+        ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
+          { name: 'sidebar.right.pane.tab.title', key: ID },
+          function ChatTabTitle() { return h('span', null, '招聘对话'); },
         ));
       },
     };
