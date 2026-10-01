@@ -30,7 +30,18 @@ window.__ModuleLoader__.load({
       '.jev-body{flex:1 1 auto;display:flex;min-height:0}',
       // The chat box: a fixed row at the foot of the panel, under the frame and the panels.
       '.jev-chat{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px;display:flex;flex-direction:column;gap:4px}',
-      '.jev-chat-row{display:flex;gap:6px;align-items:center}',
+      '.jev-chat-row{display:flex;gap:6px;align-items:flex-end}',
+      '.jev-bar{display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:12px}',
+      '.jev-bar.warn{background:var(--dsw-alias-bg-layer-2)}',
+      '.jev-bar>span:first-child{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.jev-convo{flex:1 1 auto;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}',
+      '.jev-msg{max-width:86%;padding:8px 10px;border-radius:10px;background:var(--dsw-alias-bg-layer-2)}',
+      '.jev-msg.user{align-self:flex-end}',
+      '.jev-msg.assistant{align-self:flex-start}',
+      '.jev-msg-role{font-size:11px;color:var(--dsw-alias-label-secondary);margin-bottom:2px}',
+      '.jev-msg-text{font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}',
+      '.jev-detail{flex:0 0 auto;max-height:46%;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px}',
+      '.jev-chat-input{resize:none;font:inherit}',
       '.jev-chat-input{flex:1 1 auto;min-width:0;padding:6px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:inherit;font:inherit}',
       '.jev-chat-note{font-size:12px;color:var(--dsw-alias-label-secondary)}',
       '.jev-left{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--dsw-alias-border-l1)}',
@@ -143,6 +154,44 @@ window.__ModuleLoader__.load({
       const [chatText, setChatText] = React.useState('');
       const [chatBusy, setChatBusy] = React.useState(false);
       const [chatNote, setChatNote] = React.useState('');
+      // The exchange itself. Kept here rather than fetched, because it arrives as it happens.
+      const [chatLog, setChatLog] = React.useState([]);
+      const [chatStatus, setChatStatus] = React.useState('');
+      const [chatSession, setChatSession] = React.useState('');
+      const [showDetail, setShowDetail] = React.useState(false);
+      const listRef = React.useRef(null);
+
+      // The transcript, streamed. EventSource reconnects on its own, and a reconnect replays the
+      // recent messages, so the same message can arrive twice: drops the duplicate rather than
+      // showing the conversation twice. (The Host has the same rule in lib/transcript.js; the
+      // client bundle cannot import from it, so it is three lines here instead of a build step.)
+      React.useEffect(() => {
+        if (!MOUNT) return undefined;
+        const source = new EventSource(MOUNT + '/chat/stream');
+        source.onmessage = (e) => {
+          let frame;
+          try { frame = JSON.parse(e.data); } catch { return; }
+          if (frame.kind === 'message') {
+            setChatLog((prev) => (prev.some((m) => m.id === frame.message.id) ? prev : prev.concat([frame.message]).slice(-200)));
+          } else if (frame.kind === 'status') {
+            setChatStatus(frame.text || '');
+          } else if (frame.kind === 'session') {
+            setChatSession(frame.sessionId || '');
+          } else if (frame.kind === 'end') {
+            setChatStatus(frame.ignored ? '已连接（' + frame.ignored + ' 条事件未识别）' : '');
+          } else if (frame.kind === 'error') {
+            setChatStatus('读取失败：' + frame.text);
+          }
+        };
+        source.onerror = () => setChatStatus('读取中断，正在重试…');
+        return () => source.close();
+      }, []);
+
+      // Keep the newest message in view.
+      React.useEffect(() => {
+        const el = listRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      }, [chatLog.length, chatStatus]);
 
       // `watch` names the session to look at; empty lets the host half choose one (a session
       // waiting for a decision wins, then `default`).
@@ -259,147 +308,66 @@ window.__ModuleLoader__.load({
         h('style', { key: 'css' }, CSS),
         h('div', { className: 'jev-head', key: 'head' }, [
           h('span', { className: 'jev-title', key: 't' }, '招聘工作台'),
-          sessions.length > 1
-            ? h('span', { className: 'jev-dim', key: 's' }, '会话 ' + (state.selectedSession || '—'))
-            : null,
           h('span', { className: 'jev-dim', key: 'u' }, state && state.status ? state.status : '连接中…'),
+          h('button', { key: 'd', className: 'jev-btn', onClick: () => setShowDetail((v) => !v) },
+            showDetail ? '收起详情' : '详情'),
         ]),
-        h('div', { className: 'jev-stats', key: 'stats' }, [
-          h(Stat, { key: 'v', label: '已验证', value: total.verified || 0, tone: total.verified ? 'ok' : '' }),
-          h(Stat, { key: 'u', label: '结果未确认', value: total.unconfirmed || 0, tone: total.unconfirmed ? 'warn' : '' }),
-          h(Stat, { key: 'r', label: '页面否定', value: total.refused || 0, tone: total.refused ? 'bad' : '' }),
-          h(Stat, { key: 'a', label: '动作', value: (total.actionsOk || 0) + ' / ' + (total.actionsFailed || 0) }),
-          h(Stat, { key: 'p', label: '待批/已批', value: (total.confirmations || 0) + ' / ' + (total.grants || 0) }),
-          h(Stat, { key: 'k', label: '风控停手', value: total.riskStops || 0, tone: total.riskStops ? 'bad' : '' }),
-          h(Stat, { key: 'n', label: '运行/步数', value: (total.runs || 0) + ' / ' + (total.steps || 0) }),
-          h(Stat, { key: 'c', label: '决策 token', value: (total.tokensIn || 0) + (total.tokensOut || 0) }),
-        ]),
-        h('div', { className: 'jev-body', key: 'body' }, [
-          h('div', { className: 'jev-left', key: 'l' }, [
-            h('div', { className: 'jev-frame', key: 'f' },
-              frame.url && !frame.empty
-                ? h('img', { src: frame.url, alt: '浏览器实况' })
-                : h('span', { className: 'jev-dim' },
-                    error ? '无法读取看板状态：' + error
-                      : state && state.live ? '正在取画面…'
-                        : '没有可看的页面（画面可能不可用）')),
-            h('div', { className: 'jev-meta', key: 'm' }, [
-              h('div', { key: 'live' }, [
-                h('span', { className: 'jev-dot' + (frame.url && !frame.empty ? ' on' : ''), key: 'd' }),
-                h('span', { key: 't' }, frame.url && !frame.empty ? '实时画面 · ' + ago(now - frame.at) + '更新' : '等待画面'),
-                h('span', { className: 'jev-dim', key: 's' }, lastAction ? '　最近动作：' + lastAction : ''),
-              ]),
-              h('div', { key: 'u' }, (state && state.url) || '—'),
-              h('div', { key: 'h' }, (state && state.health) || ''),
-              h('div', { key: 'p' }, (state && state.pacing) || ''),
-              tabs.length
-                ? h('div', { className: 'jev-tabs', key: 't' }, tabs.map((tab) => h(
-                    'span',
-                    { className: 'jev-tab' + (tab.active ? ' active' : ''), key: tab.index, title: tab.url },
-                    tab.index + '. ' + (tab.title || tab.url || ''),
-                  )))
+
+        // The only things that cannot proceed without a person, on one line each, above the
+        // conversation. Everything else moved behind the detail toggle, but these would be a
+        // silent stall if they moved with it.
+        task && task.requestedAuthorization
+          ? h('div', { className: 'jev-bar warn', key: 'auth' }, [
+              h('span', { key: 't' }, '授权请求 · ' + task.requestedAuthorization.actions.join('、') +
+                ' · 上限 ' + task.requestedAuthorization.limit + ' 次 · ' + task.requestedAuthorization.posting),
+              h('button', { key: 'g', className: 'jev-btn primary', disabled: busy,
+                onClick: () => decide({ id: task.requestedAuthorization.id }, 'grant') }, '批准授权'),
+              h('button', { key: 'd', className: 'jev-btn', disabled: busy,
+                onClick: () => decide({ id: task.requestedAuthorization.id }, 'deny') }, '拒绝'),
+            ])
+          : null,
+        pendings.length
+          ? h('div', { className: 'jev-bar warn', key: 'pending' }, [
+              h('span', { key: 't' }, '等待批准的动作 ' + pendings.length + ' 个 · ' + (pendings[0].target || '')),
+              h('button', { key: 'g', className: 'jev-btn primary', disabled: busy,
+                onClick: () => decide(pendings[0], 'grant') }, '批准这一个'),
+            ])
+          : null,
+        task
+          ? h('div', { className: 'jev-bar', key: 'task' }, [
+              h('span', { key: 't' }, '任务 ' + task.state +
+                (task.account ? ' · ' + task.account : '') +
+                ' · 已联系 ' + task.spend.spent + ' / ' + task.spend.limit),
+              task.state === 'running'
+                ? h('button', { key: 's', className: 'jev-btn', disabled: busy, onClick: () => control('stop') }, '统一停止')
                 : null,
-            ]),
-          ]),
-          h('div', { className: 'jev-right', key: 'r' }, [
-            h('div', { className: 'jev-sec', key: 'task' }, [
-              h('h3', { key: 'h' }, '招聘任务'),
-              task
-                ? h('div', { key: 'b' }, [
-                    h('div', { key: 'state' }, [
-                      h('span', { key: 's' }, task.state + (task.account ? ' · ' + task.account : '') + (task.posting ? ' · ' + task.posting : '')),
-                    ]),
-                    h('div', { className: 'jev-dim', key: 'spend' },
-                      '联系 ' + task.spend.spent + ' / ' + task.spend.limit + '（余 ' + task.spend.remaining + '）'),
-                    // The authorisation request. Approving it here is one of only two ways it can
-                    // come into force; no tool can grant it.
-                    task.requestedAuthorization
-                      ? h('div', { className: 'jev-pending', key: 'auth', style: { marginTop: '6px' } }, [
-                          h('div', { key: 't' }, '授权请求：' + task.requestedAuthorization.actions.join('、') +
-                            ' · ' + task.requestedAuthorization.account +
-                            ' · ' + task.requestedAuthorization.posting +
-                            ' · 上限 ' + task.requestedAuthorization.limit),
-                          h('div', { className: 'jev-dim', key: 'n' }, task.requestedAuthorization.expiresAt
-                            ? '有效期至 ' + task.requestedAuthorization.expiresAt : '无到期时间'),
-                          h('div', { style: { marginTop: '8px', display: 'flex', gap: '6px' }, key: 'btn' }, [
-                            h('button', { className: 'jev-btn primary', disabled: busy, key: 'g',
-                              onClick: () => decide({ id: task.requestedAuthorization.id }, 'grant') }, '批准授权'),
-                            h('button', { className: 'jev-btn', disabled: busy, key: 'd',
-                              onClick: () => decide({ id: task.requestedAuthorization.id }, 'deny') }, '拒绝'),
-                          ]),
-                        ])
-                      : null,
-                    task.windows && task.windows.length > 0
-                      ? h('div', { key: 'w', style: { marginTop: '6px' } }, task.windows.map((window) => h('div', { className: 'jev-row', key: window.name }, [
-                          h('span', { key: 'n', style: { marginRight: '6px' } }, window.name),
-                          h('span', { className: 'jev-dim', key: 'd' }, window.state + (window.candidate ? ' · ' + window.candidate : '')),
-                        ])))
-                      : null,
-                    task.state === 'running'
-                      ? h('div', { style: { marginTop: '8px', display: 'flex', gap: '6px' }, key: 'ctl' }, [
-                          h('button', { className: 'jev-btn', disabled: busy, key: 's', onClick: () => control('stop') }, '统一停止'),
-                          h('button', { className: 'jev-btn', disabled: busy, key: 'p', onClick: () => control('pause', 'w1') }, '暂停 w1'),
-                          h('button', { className: 'jev-btn', disabled: busy, key: 'r', onClick: () => control('resume', 'w1') }, '继续 w1'),
-                        ])
-                      : null,
-                  ])
-                : h('div', { className: 'jev-dim', key: 'none' }, '没有正在运行的任务'),
-            ]),
-            h('div', { className: 'jev-sec', key: 'p' }, [
-              h('h3', { key: 'h' }, pendings.length > 1 ? '待批准 (' + pendings.length + ')' : '待批准'),
-              pendings.length
-                ? h('div', { key: 'l' }, pendings.map((stop) => h('div', { className: 'jev-pending', key: stop.id, style: { marginBottom: '6px' } }, [
-                    h('div', { key: 't' }, stop.target),
-                    h('div', { className: 'jev-dim', key: 'g' }, (stop.session || '') + (stop.goal ? ' · ' + stop.goal : '')),
-                    h('div', { style: { marginTop: '8px', display: 'flex', gap: '6px' }, key: 'b' }, [
-                      h('button', { className: 'jev-btn primary', disabled: busy, onClick: () => decide(stop, 'grant'), key: 'g' }, '批准这一步'),
-                      h('button', { className: 'jev-btn', disabled: busy, onClick: () => decide(stop, 'deny'), key: 'd' }, '拒绝'),
-                    ]),
-                    h('div', { className: 'jev-dim', key: 'n', style: { marginTop: '6px' } },
-                      '批准只授权这一个动作，用完即失效；' + ago(now - (stop.at || now)) + '前提出'),
-                  ])))
-                : h('div', { className: 'jev-dim', key: 'n' }, '没有等待批准的动作'),
-            ]),
-            h('div', { className: 'jev-sec', key: 's' }, [
-              h('h3', { key: 'h' }, '会话' + (sessions.length > 1 ? '（点一个看它的实时画面）' : '')),
-              sessions.length
-                ? h('div', { key: 'l' }, sessions.map((s) => h('div', {
-                    key: s.name,
-                    className: 'jev-row jev-pick' + (s.name === (state.selectedSession || '') ? ' on' : ''),
-                    title: '看这个会话的实时画面',
-                    onClick: () => setWatch(s.name),
-                  }, [
-                    h('span', { key: 'n', style: { marginRight: '6px' } },
-                      (s.name === (state.selectedSession || '') ? '● ' : '') + s.name),
-                    h('span', { className: 'jev-dim', key: 'd' },
-                      s.origin + ' · ' + s.tabs + ' 标签 · ' + s.actions + ' 动作 · 空闲 ' + ago(s.idleMs)),
-                  ])))
-                : h('div', { className: 'jev-dim', key: 'n' }, '没有会话'),
-            ]),
-            h('div', { className: 'jev-sec', key: 'r' }, [
-              h('h3', { key: 'h' }, '最近运行'),
-              (state && state.runs && state.runs.length)
-                ? h('div', { key: 'l' }, state.runs.slice(0, 4).map((run, i) => h('div', { className: 'jev-row', key: i }, [
-                    h('span', { className: 'jev-t', key: 't' }, clock(run.at)),
-                    h('span', { key: 's' }, run.status + ' · ' + run.steps + ' 步'),
-                    h('span', { className: 'jev-dim', key: 'g' }, ' ' + (run.goal || '').slice(0, 40)),
-                  ])))
-                : h('div', { className: 'jev-dim', key: 'n' }, '还没有运行'),
-            ]),
-            h('div', { className: 'jev-feed', key: 'f' }, [
-              h('h3', { key: 'h', style: { margin: '0 0 6px', fontSize: '12px', color: 'var(--dsw-alias-label-secondary)' } }, '活动轨迹'),
-              h(Feed, { events, key: 'l' }),
-            ]),
-          ]),
+            ])
+          : null,
+
+        // The conversation is the page now: what was said, and what is coming back.
+        h('div', { className: 'jev-convo', key: 'convo', ref: listRef }, [
+          chatLog.length === 0
+            ? h('div', { className: 'jev-dim', key: 'empty' },
+                chatStatus || '还没有对话。在下面说点什么，回复会出现在这里。')
+            : chatLog.map((m) => h('div', { className: 'jev-msg ' + m.role, key: m.id }, [
+                h('div', { className: 'jev-msg-role', key: 'r' }, m.role === 'user' ? '我' : 'AI'),
+                h('div', { className: 'jev-msg-text', key: 't' }, m.text),
+              ])),
         ]),
+        chatStatus && chatLog.length > 0
+          ? h('div', { className: 'jev-chat-note', key: 'st', style: { padding: '0 12px 4px' } },
+              chatStatus + (chatSession ? '　·　' + chatSession : ''))
+          : null,
+
         h('div', { className: 'jev-chat', key: 'chat' }, [
           h('div', { className: 'jev-chat-row', key: 'r' }, [
-            h('input', {
+            h('textarea', {
               key: 'i',
               className: 'jev-chat-input',
+              rows: 2,
               value: chatText,
               disabled: chatBusy,
-              placeholder: '对 AI 说点什么，回车发送…',
+              placeholder: '说点什么，回车发送（Shift+回车换行）…',
               'aria-label': '给 AI 的消息',
               onChange: (e) => setChatText(e.target.value),
               onKeyDown: (e) => {
@@ -417,8 +385,78 @@ window.__ModuleLoader__.load({
             }, chatBusy ? '发送中…' : '发送'),
           ]),
           h('div', { className: 'jev-chat-note', key: 'n' },
-            chatNote || '消息进入当前对话，回复显示在主对话里，不在这里'),
+            chatNote || (chatSession ? '对话 ' + chatSession : '回车发送')),
         ]),
+
+        // Kept, not dropped: the live frame, the counters, the sessions and the activity trail,
+        // behind one toggle so the default view can be just the conversation.
+        showDetail
+          ? h('div', { className: 'jev-detail', key: 'detail' }, [
+              h('div', { className: 'jev-frame', key: 'f' },
+                frame.url && !frame.empty
+                  ? h('img', { src: frame.url, alt: '浏览器实况' })
+                  : h('span', { className: 'jev-dim' },
+                      error ? '无法读取看板状态：' + error
+                        : state && state.live ? '正在取画面…' : '没有可看的页面')),
+              h('div', { className: 'jev-meta', key: 'm' }, [
+                h('div', { key: 'live' }, [
+                  h('span', { className: 'jev-dot' + (frame.url && !frame.empty ? ' on' : ''), key: 'd' }),
+                  h('span', { key: 't' }, frame.url && !frame.empty ? '实时画面 · ' + ago(now - frame.at) + '更新' : '等待画面'),
+                  h('span', { className: 'jev-dim', key: 's' }, lastAction ? '　最近动作：' + lastAction : ''),
+                ]),
+                h('div', { key: 'u' }, (state && state.url) || '—'),
+                h('div', { key: 'h' }, (state && state.health) || ''),
+                h('div', { key: 'p' }, (state && state.pacing) || ''),
+                tabs.length
+                  ? h('div', { className: 'jev-tabs', key: 't' }, tabs.map((tab) => h(
+                      'span',
+                      { className: 'jev-tab' + (tab.active ? ' active' : ''), key: tab.index, title: tab.url },
+                      tab.index + '. ' + (tab.title || tab.url || ''),
+                    )))
+                  : null,
+              ]),
+              h('div', { className: 'jev-meta', key: 'stats' }, [
+                h(Stat, { key: 'v', label: '已验证', value: total.verified || 0, tone: total.verified ? 'ok' : '' }),
+                h(Stat, { key: 'u', label: '结果未确认', value: total.unconfirmed || 0, tone: total.unconfirmed ? 'warn' : '' }),
+                h(Stat, { key: 'r', label: '页面否定', value: total.refused || 0, tone: total.refused ? 'bad' : '' }),
+                h(Stat, { key: 'a', label: '动作', value: (total.actionsOk || 0) + ' / ' + (total.actionsFailed || 0) }),
+                h(Stat, { key: 'p', label: '待批/已批', value: (total.confirmations || 0) + ' / ' + (total.grants || 0) }),
+                h(Stat, { key: 'k', label: '风控停手', value: total.riskStops || 0, tone: total.riskStops ? 'bad' : '' }),
+                h(Stat, { key: 'n', label: '运行/步数', value: (total.runs || 0) + ' / ' + (total.steps || 0) }),
+                h(Stat, { key: 'c', label: '决策 token', value: (total.tokensIn || 0) + (total.tokensOut || 0) }),
+              ]),
+              h('div', { className: 'jev-sec', key: 's' }, [
+                h('h3', { key: 'h' }, '会话' + (sessions.length > 1 ? '（点一个看它的实时画面）' : '')),
+                sessions.length
+                  ? h('div', { key: 'l' }, sessions.map((s) => h('div', {
+                      key: s.name,
+                      className: 'jev-row jev-pick' + (s.name === (state.selectedSession || '') ? ' on' : ''),
+                      title: '看这个会话的实时画面',
+                      onClick: () => setWatch(s.name),
+                    }, [
+                      h('span', { key: 'n', style: { marginRight: '6px' } },
+                        (s.name === (state.selectedSession || '') ? '● ' : '') + s.name),
+                      h('span', { className: 'jev-dim', key: 'd' },
+                        s.origin + ' · ' + s.tabs + ' 标签 · ' + s.actions + ' 动作 · 空闲 ' + ago(s.idleMs)),
+                    ])))
+                  : h('div', { className: 'jev-dim', key: 'n' }, '没有会话'),
+              ]),
+              h('div', { className: 'jev-sec', key: 'r' }, [
+                h('h3', { key: 'h' }, '最近运行'),
+                (state && state.runs && state.runs.length)
+                  ? h('div', { key: 'l' }, state.runs.slice(0, 4).map((run, i) => h('div', { className: 'jev-row', key: i }, [
+                      h('span', { className: 'jev-t', key: 't' }, clock(run.at)),
+                      h('span', { key: 's' }, run.status + ' · ' + run.steps + ' 步'),
+                      h('span', { className: 'jev-dim', key: 'g' }, ' ' + (run.goal || '').slice(0, 40)),
+                    ])))
+                  : h('div', { className: 'jev-dim', key: 'n' }, '还没有运行'),
+              ]),
+              h('div', { className: 'jev-feed', key: 'feed' }, [
+                h('h3', { key: 'h', style: { margin: '0 0 6px', fontSize: '12px', color: 'var(--dsw-alias-label-secondary)' } }, '活动轨迹'),
+                h(Feed, { events, key: 'l' }),
+              ]),
+            ])
+          : null,
       ]);
     }
 

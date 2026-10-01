@@ -23,7 +23,8 @@ import { Viewer } from './lib/viewer.js';
 import { Journal } from './lib/journal.js';
 import { Records } from './lib/records.js';
 import { Task } from './lib/task.js';
-import { sendChat } from './lib/chat.js';
+import { sendChat, followTranscript } from './lib/chat.js';
+import { normalizeFrame, describeEvent } from './lib/transcript.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
 
@@ -201,6 +202,32 @@ export function apply(ctx, config) {
     // The workbench's chat box. The text becomes a prompt in a conversation through the
     // platform's own session controller — the same call the conversation composer makes — and
     // the answer renders in that conversation rather than in this panel.
+    // The transcript, streamed to the panel so the chat box shows the exchange and not only the
+    // half this plugin sent. Frames that carry no message become a one-line status; anything
+    // unrecognised is counted and reported, so a silent empty panel is not possible.
+    chatStream: async ({ sessionId, signal, sendFrame }) => {
+      const controller = ctx.get?.('sessionController');
+      if (!controller) throw new Error('this Host exposes no session controller, so there is nothing to read');
+      let ignored = 0;
+      await followTranscript({ sessionController: controller }, {
+        sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined,
+        signal,
+        onSession: (id) => sendFrame({ kind: 'session', sessionId: id }),
+        onFrame: (frame) => {
+          const message = normalizeFrame(frame);
+          if (message) {
+            sendFrame({ kind: 'message', message });
+            return;
+          }
+          const status = describeEvent(frame);
+          // The state goes in its own field: spreading it here overwrote `kind` with 'busy',
+          // and the panel compares on 'status', so it would never have seen one.
+          if (status) sendFrame({ kind: 'status', state: status.kind, text: status.text });
+          else ignored += 1;
+        },
+      });
+      sendFrame({ kind: 'end', ignored });
+    },
     chat: async (message) => {
       const controller = ctx.get?.('sessionController');
       if (!controller) throw new Error('this Host exposes no session controller, so there is nowhere to send');

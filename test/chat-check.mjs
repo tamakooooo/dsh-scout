@@ -214,6 +214,94 @@ await verify('a malformed body is refused before anything is sent', async () => 
   assert.equal(sent.length, 0);
 });
 
+// ── the stream the panel reads ───────────────────────────────────────────────
+// Driven over HTTP as the panel drives it, with a Host stub that yields the frames the platform
+// yields, so what is asserted is the path — route, SSE framing, normalisation — and not a helper.
+console.log('\n=== the transcript stream ===');
+
+const streamed = [];
+const streamCtx = {
+  tools: { register() {} },
+  effect: () => {},
+  logger: { debug() {} },
+  inject: () => () => {},
+  get: (key) => (key === 'sessionController' ? {
+    async list() { return [{ sessionId: 's-live', title: '适配智联' }]; },
+    follow(request, signal) {
+      streamed.push(request);
+      const frames = [
+        { type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } },
+        { type: 'user/message', seq: 2, time: 2, data: { id: 'u1', role: 'user', content: [{ type: 'text', text: '筛选前 20 个' }] } },
+        { type: 'tool/call', seq: 3, time: 3, data: { name: 'browser_inspect' } },
+        { type: 'assistant/message', seq: 4, time: 4, data: { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: '好，我来。' }] } } },
+        { type: 'something/unknown', seq: 5, time: 5, data: {} },
+      ];
+      return (async function* generate() { for (const frame of frames) yield frame; })();
+    },
+  } : undefined),
+};
+const streamHandle = apply(streamCtx, { viewer: true, viewerPort: 0, profileDir: `/tmp/jev-chat-stream-${process.pid}` });
+await new Promise((resolve) => setTimeout(resolve, 300));
+
+/** Read an SSE response to the end and return the parsed frames. */
+async function readStream(url) {
+  const response = await fetch(url);
+  assert.equal(response.status, 200, `the stream was refused: ${response.status}`);
+  const text = await response.text();
+  return text.split('\n\n')
+    .map((block) => block.split('\n').find((line) => line.startsWith('data: ')))
+    .filter(Boolean)
+    .map((line) => JSON.parse(line.slice(6)));
+}
+
+await verify('the panel is told which session it is reading, before the stream ends', async () => {
+  const frames = await readStream(new URL('chat/stream', streamHandle.viewer.url));
+  const session = frames.find((frame) => frame.kind === 'session');
+  assert.ok(session, `no session frame: ${JSON.stringify(frames)}`);
+  assert.equal(session.sessionId, 's-live');
+  // The session frame must not be last: a live stream never ends, so a panel that only learned
+  // it at the end would never learn it at all.
+  assert.notEqual(frames[frames.length - 1].kind, 'session', 'the session was reported only at the end');
+});
+
+await verify('the exchange arrives as messages and statuses, and unknowns are counted', async () => {
+  const frames = await readStream(new URL('chat/stream', streamHandle.viewer.url));
+  const messages = frames.filter((frame) => frame.kind === 'message').map((frame) => [frame.message.role, frame.message.text]);
+  assert.deepEqual(messages, [['user', '筛选前 20 个'], ['assistant', '好，我来。']]);
+  const statuses = frames.filter((frame) => frame.kind === 'status').map((frame) => frame.text);
+  assert.ok(statuses.some((text) => /正在回复/.test(text)), `no busy status: ${JSON.stringify(statuses)}`);
+  assert.ok(statuses.some((text) => /browser_inspect/.test(text)), `no tool status: ${JSON.stringify(statuses)}`);
+  const end = frames.find((frame) => frame.kind === 'end');
+  assert.equal(end.ignored, 1, 'the unrecognised frame was not counted');
+});
+
+await verify('the stream asks for the recent messages, without a cursor', async () => {
+  assert.equal(streamed.length >= 2, true);
+  const request = streamed[0];
+  assert.deepEqual(request.address, { kind: 'session', sessionId: 's-live' });
+  assert.equal(request.assistantStream, true);
+  assert.ok(request.maxMessages > 0);
+  assert.equal('throughSeq' in request, false, 'a cursor was sent, which the stream does not take');
+});
+
+await verify('a stream that breaks says so rather than showing nothing', async () => {
+  const brokenCtx = {
+    tools: { register() {} }, effect: () => {}, logger: { debug() {} }, inject: () => () => {},
+    get: (key) => (key === 'sessionController' ? {
+      async list() { return [{ sessionId: 's-live' }]; },
+      follow() { return (async function* generate() { yield { type: 'turn/start', seq: 1, data: { turn: 1 } }; throw new Error('the session log was pruned'); })(); },
+    } : undefined),
+  };
+  const broken = apply(brokenCtx, { viewer: true, viewerPort: 0, profileDir: `/tmp/jev-chat-broken-${process.pid}` });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const frames = await readStream(new URL('chat/stream', broken.viewer.url));
+  const error = frames.find((frame) => frame.kind === 'error');
+  assert.ok(error, `the break was silent: ${JSON.stringify(frames)}`);
+  assert.match(error.text, /pruned/);
+  await broken.viewer.close();
+});
+
+await streamHandle.viewer.close();
 await handle.viewer.close();
 await handle.sessions?.closeAll?.().catch?.(() => {});
 

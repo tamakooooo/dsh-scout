@@ -53,6 +53,10 @@ const parts = {
   linuxHome: '/home/' + 'someone' + '/data',
   email: 'recruiter' + '@' + 'example-corp.com',
   phone: '13800' + '001111',
+  // Assembled from pieces like the rest of them: a contiguous number in a public test file is
+  // exactly what this guard exists to catch, so the guard would catch its own test.
+  phoneA: '138' + '1234' + '5678',
+  phoneB: '139' + '1234' + '5678',
   quota: '今日推荐人才剩：' + '聊天' + '配额 500',
 };
 
@@ -89,6 +93,18 @@ console.log('=== the scanner catches what it is for ===');
   check('the allow marker exempts a line', scanText(parts.quota + ' // privacy-check:allow').length === 0);
   check('a local token is caught when supplied', scanText('候选人 张三', ['张三']).length === 1);
   check('an empty local token never matches', scanText('anything', ['']).length === 0);
+
+  // A millisecond timestamp contains an eleven-digit run that reads as a mobile number. It is
+  // not one, and flagging it would fire on ordinary test data — which is how a guard stops being
+  // read. The pattern is bounded on both sides now.
+  const timestamps = scanText('const at = 1700000000000 + seq;\nconst later = 1767225600123;\n', []);
+  check('a millisecond timestamp is not a phone number',
+    !timestamps.some((f) => f.id === 'chinese mobile number'), JSON.stringify(timestamps));
+  // A real one is still found, including beside punctuation rather than only between spaces.
+  const besidePunctuation = scanText(
+    'call ' + parts.phoneA + ' now\n或者(' + parts.phoneB + ')。\n', []);
+  check('a phone number beside punctuation is still found',
+    besidePunctuation.filter((f) => f.id === 'chinese mobile number').length === 2, JSON.stringify(besidePunctuation));
 }
 
 // ── 1b. the sanitiser turns a real page into a publishable one ───────────────

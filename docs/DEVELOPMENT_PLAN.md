@@ -117,7 +117,23 @@
 
 复用现有 21 个套件（schema / labels / guardrails / regressions / guards / verify / concurrency / injection / privacy / inspect / site / posting / records / recruiting / control / workers / authorize / send / run / task / recruit-tools，共 449 条断言），补实际页面 fixture、匹配断言、自主适配和并发场景；隐私扫描继续作为提交前的强制检查。重点检查：岗位更换与版本固定、缓存首次生成/复用、布局变化后自动更新、失效 ref、未知组件、同名对象、同一人被两窗同时发现、联系上限同时到达、窗口切页/关闭/恢复、单个 worker 结束、跨预设重复启动、停止/撤销、发送后超时及进程退出。新增入口与输出同时验证 Host schema。
 
-### 工作台上的聊天框
+### 工作台的界面（第二稿：以对话为主）
+
+第一稿把工作台塞满了 —— 实时画面、八项统计、任务、待批、会话、运行、活动轨迹。第二稿把它们**收进一个「详情」开关**，默认只有一段**能真正来回的对话**：消息流 + 输入框。
+
+对话是**读出来的**，不是只显示自己发的那一半。读取走平台契约里的流式接口：
+
+```
+SessionFollowRequest { address; maxMessages?; turnWindow?; assistantStream? }   // 流式，无需游标
+SessionHistoryRecord = SessionEventEntry = { type:'event'; event: SessionWireEvent }
+SessionEventMap   'user/message' -> UserMessage    'assistant/message' -> { message: AssistantMessage }
+```
+
+没有用 `page`：它需要一个 `throughSeq` 游标，而**游标给错就是一段静默的空对话**。工作台面板挂在 shell 级的 `main` 槽（root 作用域，拿不到当前会话），所以 Host 按「活动时间排序第一条」定位，**并在流开始前就把会话 id 报给页面**（长连接永不结束，等结束才报就等于永远不报）。
+
+不认识的帧会被**计数并告知**，不会让面板看起来空空如也却什么也不说。
+
+### 工作台上的聊天框（第一稿）
 
 工作台底部多了一个输入框，消息通过平台自身的 `sessionController.prompt` 进入当前对话 —— 与对话页的输入框调用的是同一个方法。形状不是我编的，是从平台的实时契约里读出来的：
 
