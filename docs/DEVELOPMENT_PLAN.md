@@ -115,7 +115,7 @@
 3. 完成 S3/S4，加入两个窗口、共享领取/额度与一次任务授权，在本地并发测试中验证正确性。
 4. 完成 S6，实际网站试用单窗口和双窗口，按同批候选人比较速度，校准发送节奏。
 
-复用现有 21 个套件（schema / labels / guardrails / regressions / guards / verify / concurrency / injection / privacy / inspect / site / posting / records / recruiting / control / workers / authorize / send / run / task / recruit-tools，共 448 条断言），补实际页面 fixture、匹配断言、自主适配和并发场景；隐私扫描继续作为提交前的强制检查。重点检查：岗位更换与版本固定、缓存首次生成/复用、布局变化后自动更新、失效 ref、未知组件、同名对象、同一人被两窗同时发现、联系上限同时到达、窗口切页/关闭/恢复、单个 worker 结束、跨预设重复启动、停止/撤销、发送后超时及进程退出。新增入口与输出同时验证 Host schema。
+复用现有 21 个套件（schema / labels / guardrails / regressions / guards / verify / concurrency / injection / privacy / inspect / site / posting / records / recruiting / control / workers / authorize / send / run / task / recruit-tools，共 449 条断言），补实际页面 fixture、匹配断言、自主适配和并发场景；隐私扫描继续作为提交前的强制检查。重点检查：岗位更换与版本固定、缓存首次生成/复用、布局变化后自动更新、失效 ref、未知组件、同名对象、同一人被两窗同时发现、联系上限同时到达、窗口切页/关闭/恢复、单个 worker 结束、跨预设重复启动、停止/撤销、发送后超时及进程退出。新增入口与输出同时验证 Host schema。
 
 ### 第 3 步的验证现状（S3 + S4 + S6 + S7）
 

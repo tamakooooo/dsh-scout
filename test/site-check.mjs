@@ -256,6 +256,45 @@ try {
     assert.ok(target.code === 'identity_ambiguous' || target.code === 'identity_not_found', `got ${target.code}`);
   });
 
+  await verify('a responsive action resolves to the displayed variant only', async () => {
+    // Found on the real page: the greeting exists twice, once for large screens and once for
+    // small, and only one is displayed. The resolver originally matched both and refused every
+    // greeting as ambiguous — on the real site, every one of them.
+    const responsive = await readFile(new URL('./fixtures/cards-responsive.html', import.meta.url), 'utf8');
+    const server = createServer((req, res) => {
+      res.setHeader('content-type', 'text/html;charset=utf-8');
+      res.end(responsive);
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const url = `http://127.0.0.1:${server.address().port}/list`;
+      await navigate(session.cdp, session.sessionId, url);
+      const config = {
+        version: 1,
+        domain: '127.0.0.1',
+        page: 'responsive',
+        cards: {
+          locator: { tag: 'div', attr: [{ name: 'class', contains: 'recommend-item' }] },
+          identity: { from: 'attr:data-index' },
+        },
+        fields: { name: { locator: { attr: [{ name: 'class', contains: 'talent-basic-info__title' }] } } },
+        actions: { greet: { scope: 'card', type: 'click', effect: 'quota', locator: { tag: 'button', text: { equals: '打招呼' } } } },
+      };
+      const report = await check(session.cdp, session.sessionId, { config });
+      assert.equal(report.matched, 2, `matched ${report.matched}`);
+      assert.equal(report.ambiguous, 0, 'the hidden responsive variant was counted as an action target');
+      assert.equal(report.canSend, true, JSON.stringify(report));
+
+      const target = await resolveTarget(session.cdp, session.sessionId, { config, identity: '0', action: 'greet' });
+      assert.equal(target.ok, true, `${target.code}: ${target.message}`);
+      const visible = await evaluate(session.cdp, session.sessionId,
+        `(() => { const el = document.querySelector('[data-dsh-jev-ref="cfg-1"]'); return el ? el.className : ''; })()`);
+      assert.match(String(visible), /large-screen-btn/, `resolved the wrong variant: ${visible}`);
+    } finally {
+      server.close();
+    }
+  });
+
   await verify('a saved configuration round-trips through the local root', async () => {
     const path = await saveConfig(good);
     assert.ok(path.startsWith(localDir('sites')), `saved outside the local root: ${path}`);

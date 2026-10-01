@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>推荐人才</title>
+<style>
+  body { margin: 0; font: 14px/1.4 sans-serif; }
+  /* The real page does exactly this: one action, two responsive variants, one displayed. */
+  .small-screen-btn { display: none; }
+  @media (max-width: 10px) { .large-screen-btn { display: none; } .small-screen-btn { display: inline-block; } }
+</style></head>
+<body>
+  <div class="talent-recommend">
+    <div class="recommend-item recommend-resume-item resume-item-exp" data-index="0">
+      <div class="talent-basic-info__title">饶先生</div>
+      <div class="talent-basic-info__basic"><span class="age-label">29岁</span><span class="work-years-label">5年</span></div>
+      <div class="resume-action recommend-resume-action"><div class="resume-action__inner"><div class="resume-button">
+        <button type="button" class="large-screen-btn km-button km-button--primary" data-action="greet">打招呼</button>
+        <button type="button" class="small-screen-btn km-button km-button--light" data-action="greet">打招呼</button>
+      </div></div></div>
+    </div>
+    <div class="recommend-item recommend-resume-item resume-item-exp" data-index="1">
+      <div class="talent-basic-info__title">郑先生</div>
+      <div class="talent-basic-info__basic"><span class="age-label">26岁</span><span class="work-years-label">4年</span></div>
+      <div class="resume-action recommend-resume-action"><div class="resume-action__inner"><div class="resume-button">
+        <button type="button" class="large-screen-btn km-button km-button--primary" data-action="greet">打招呼</button>
+        <button type="button" class="small-screen-btn km-button km-button--light" data-action="greet">打招呼</button>
+      </div></div></div>
+    </div>
+  </div>
+</body></html>
