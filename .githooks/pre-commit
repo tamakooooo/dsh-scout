@@ -1,0 +1,18 @@
+#!/bin/sh
+# Refuse to commit content that would publish someone's identity.
+#
+# Runs the staged-content scan from tools/privacy-scan.mjs. Fails closed: if node cannot be
+# found, or the scan cannot run, the commit is blocked rather than allowed through unexamined.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# Bypass deliberately:     git commit --no-verify
+set -eu
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node not found on PATH, so the privacy scan cannot run." >&2
+  echo "           Install node, or bypass this guard deliberately with: git commit --no-verify" >&2
+  exit 1
+fi
+
+root=$(git rev-parse --show-toplevel)
+exec node "$root/tools/privacy-scan.mjs" --staged

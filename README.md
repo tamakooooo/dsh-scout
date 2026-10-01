@@ -471,6 +471,49 @@ Four properties keep it honest:
   inside `runGoal`, which would have made the whole feature a silent no-op: the panel
   would have written a grant to an object the next call never saw.
 
+## Local data
+
+This repository holds **mechanism**; your data lives outside it. Nothing in here is
+account-specific, and the test suite runs green on a fresh clone with no local data at all.
+
+```
+$DSH_SCOUT_HOME                    # override, used by tests
+  ?? $DSH_HOME/dsh-scout           # default: ~/.dsh/dsh-scout
+       profile/      the logged-in Chrome profile — cookies
+       postings/     job configuration: real conditions and greeting copy
+       sites/        learned site rules
+       records/      candidate records
+       samples/      real page samples, sanitised
+       privacy-denylist.txt          your own identifiers, one per line
+```
+
+Two guards enforce the split rather than documenting it: `safeName()` refuses a name that
+escapes its directory (those names can come from a model or from page content), and
+`assertOutsideRepo()` refuses to place data inside this tree, which is what gets published.
+
+**Enable the pre-commit guard once per clone** — git does not track `core.hooksPath`:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+It scans the **staged** blobs, because the index is what a commit publishes, and it fails
+closed: no node, or a scan that cannot run, blocks the commit instead of passing it
+unexamined. To check by hand or in CI:
+
+```sh
+node tools/privacy-scan.mjs --staged     # what a commit would publish
+node tools/privacy-scan.mjs --tracked    # everything tracked
+```
+
+The pattern list is generic and public. **Your identifiers are not**: put them in
+`$DSH_SCOUT_HOME/privacy-denylist.txt` and the same scan also looks for those. A deliberate
+match — a synthetic fixture shaped like the real thing — takes `privacy-check:allow` on the
+line, with a reason.
+
+**To wipe your local data**, delete the local root. That removes the login, the learned site
+rules, the postings and the records together; nothing in this repository needs it.
+
 ## Prerequisites
 
 - A CommandCode plan with **API access** (`typesafe/jev` is served on the separate
