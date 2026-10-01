@@ -152,8 +152,14 @@ console.log('\n=== browser_inspect as a tool ===');
 
   try {
     await check('the tool set includes browser_inspect', async () => {
-      assert.ok(tool('browser_inspect'), `registered: ${definitions.map((d) => d.name).join(', ')}`);
-      assert.equal(definitions.length, 6, `${definitions.length} tools registered`);
+      const names = definitions.map((d) => d.name);
+      assert.ok(tool('browser_inspect'), `registered: ${names.join(', ')}`);
+      // Names, not a count: an exact count breaks every time a tool is added, which turns a
+      // meaningful check into noise nobody reads.
+      for (const required of ['browser_open', 'browser_snapshot', 'browser_inspect', 'browser_act', 'browser_jev', 'browser_close']) {
+        assert.ok(names.includes(required), `${required} is not registered: ${names.join(', ')}`);
+      }
+      assert.ok(definitions.length >= 6, `only ${definitions.length} tools registered`);
     });
 
     const opened = await tool('browser_open').execute({ url }, { signal });

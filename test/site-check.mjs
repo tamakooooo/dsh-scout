@@ -18,7 +18,7 @@ import { join } from 'node:path';
 const { resolveConfig } = await import('../index.js');
 const { Sessions } = await import('../lib/sessions.js');
 const { navigate } = await import('../lib/page.js');
-const { validateConfig, check, configFileName, loadConfig, saveConfig, USABLE_HIT_RATE } = await import('../lib/site.js');
+const { validateConfig, check, readCandidates, configFileName, loadConfig, saveConfig, USABLE_HIT_RATE } = await import('../lib/site.js');
 const { localDir } = await import('../lib/local.js');
 
 let failures = 0;
@@ -110,8 +110,8 @@ try {
     assert.equal(report.missing, 0);
     assert.equal(report.verdict, 'usable', JSON.stringify(report.markerFailures));
     assert.equal(report.canSend, true, 'a usable configuration was refused');
-    assert.equal(report.samples[0].identity, 'C-1001', `identity was ${report.samples[0].identity}`);
-    assert.equal(report.samples[0].fields.city.value, '广州');
+    assert.equal(report.cards[0].identity, 'C-1001', `identity was ${report.cards[0].identity}`);
+    assert.equal(report.cards[0].fields.city.value, '广州');
   });
 
   await verify('a card locator that matches nothing is stale, not best-effort', async () => {
@@ -162,6 +162,33 @@ try {
       `unstable conditions: ${JSON.stringify(report.unstableConditions)}`);
   });
 
+  await verify('the read path returns records with their provenance', async () => {
+    const read = await readCandidates(session.cdp, session.sessionId, { config: good });
+    assert.equal(read.count, 6);
+    assert.equal(read.verdict, 'usable');
+    assert.deepEqual(read.candidates[0].fields, { name: '徐先生', city: '广州' });
+    assert.deepEqual(read.candidates[0].unknown, [], 'a field that resolved was reported unknown');
+    assert.equal(read.candidates[0].actions.greet, true, 'the action did not resolve uniquely');
+    assert.deepEqual(read.candidates.map((c) => c.identity), ['C-1001', 'C-1002', 'C-1003', 'C-1004', 'C-1005', 'C-1006']);
+  });
+
+  await verify('a missing field reads as unknown, never as an invented value', async () => {
+    const config = JSON.parse(JSON.stringify(good));
+    config.fields.email = { locator: { tag: 'span', attr: [{ name: 'class', equals: 'em' }] } };
+    const read = await readCandidates(session.cdp, session.sessionId, { config });
+    assert.equal(read.candidates[0].fields.email, null);
+    assert.deepEqual(read.candidates[0].unknown, ['email']);
+    assert.equal(read.canSend, false, 'an incomplete read was still allowed to send');
+  });
+
+  await verify('a stale configuration reads nothing at all', async () => {
+    const config = JSON.parse(JSON.stringify(good));
+    config.markers = [{ kind: 'exists', locator: { tag: 'ul', attr: [{ name: 'id', equals: 'not-here' }] } }];
+    const read = await readCandidates(session.cdp, session.sessionId, { config });
+    assert.equal(read.count, 0, 'records were read from a page the rules do not describe');
+    assert.equal(read.verdict, 'stale');
+  });
+
   await verify('a saved configuration round-trips through the local root', async () => {
     const path = await saveConfig(good);
     assert.ok(path.startsWith(localDir('sites')), `saved outside the local root: ${path}`);
@@ -183,8 +210,116 @@ try {
 } finally {
   await sessions.closeAll().catch(() => {});
   await rm(profileDir, { recursive: true, force: true }).catch(() => {});
-  server.close();
+  // The fixture server stays up for the tool section below, which opens the same URL.
 }
+
+// ── the tool the agent actually calls ────────────────────────────────────────
+// The blocks above drive lib/site.js directly. This one goes through the registered tool, so
+// the parameter mapping, the output shape, the renderer and the file it writes are exercised —
+// the places a schema mismatch or a wrong path hides until a model request fails.
+console.log('\n=== browser_site_config as a tool ===');
+{
+  const { apply } = await import('../index.js');
+  const { readFile: read } = await import('node:fs/promises');
+  const definitions = [];
+  const ctx = {
+    tools: { register: (definition) => definitions.push(definition) },
+    effect: () => {},
+    logger: { debug() {} },
+    get: () => undefined,
+    inject: () => () => {},
+  };
+  const toolProfile = join(tmpdir(), `jev-site-tool-${process.pid}`);
+  apply(ctx, { headless: true, viewer: false, profileDir: toolProfile });
+  const signal = new AbortController().signal;
+  const tool = (name) => definitions.find((definition) => definition.name === name);
+  const call = (args) => tool('browser_site_config').execute({ session: 'default', ...args }, { signal });
+  const asText = (config) => JSON.stringify(config);
+
+  try {
+    await verify('the tool set includes browser_site_config', async () => {
+      const names = definitions.map((d) => d.name);
+      assert.ok(tool('browser_site_config'), `registered: ${names.join(', ')}`);
+      for (const required of ['browser_inspect', 'browser_site_config', 'browser_open', 'browser_close']) {
+        assert.ok(names.includes(required), `${required} is not registered: ${names.join(', ')}`);
+      }
+    });
+
+    await tool('browser_open').execute({ url: `http://127.0.0.1:${server.address().port}/list` }, { signal });
+
+    await verify('check reports a usable configuration', async () => {
+      const value = await call({ action: 'check', config: asText(good) });
+      for (const key of tool('browser_site_config').output.schema.required) {
+        assert.ok(key in value, `the tool omitted a required field: ${key}`);
+      }
+      assert.equal(value.status, 'ok');
+      assert.equal(value.can_send, true);
+      assert.equal(value.matched, 6);
+      assert.equal(value.hit_rate, 1);
+    });
+
+    await verify('check reports needs_adaptation for rules that no longer fit', async () => {
+      const stale = JSON.parse(JSON.stringify(good));
+      stale.cards.locator = { tag: 'li', attr: [{ name: 'class', equals: 'gone' }] };
+      const value = await call({ action: 'check', config: asText(stale) });
+      assert.equal(value.status, 'needs_adaptation');
+      assert.equal(value.can_send, false);
+      assert.equal(value.verdict, 'stale');
+    });
+
+    await verify('save refuses a stale configuration rather than storing it', async () => {
+      const stale = JSON.parse(JSON.stringify(good));
+      stale.page = 'gone';
+      stale.cards.locator = { tag: 'li', attr: [{ name: 'class', equals: 'gone' }] };
+      const before = (await call({ action: 'list' })).config_files.length;
+      const value = await call({ action: 'save', config: asText(stale) });
+      assert.equal(value.status, 'refused');
+      assert.equal(value.saved_to, '');
+      assert.equal((await call({ action: 'list' })).config_files.length, before, 'a stale configuration was written anyway');
+    });
+
+    await verify('save writes the configuration under the local root', async () => {
+      const value = await call({ action: 'save', config: asText(good) });
+      assert.equal(value.status, 'ok', value.note);
+      assert.ok(value.saved_to.startsWith(localDir('sites')), `saved outside the local root: ${value.saved_to}`);
+      const stored = JSON.parse(await read(value.saved_to, 'utf8'));
+      assert.equal(stored.version, 1);
+      assert.ok(stored.validated, 'the saved file carries no evidence of the check that allowed it');
+      assert.equal(stored.validated.cards, 6);
+      assert.match(value.note, /confirmation gate/, 'the note does not say the first send is still gated');
+    });
+
+    await verify('list and load read back what was saved', async () => {
+      const listed = await call({ action: 'list' });
+      assert.ok(listed.config_files.includes('127-0-0-1--candidate-list.json'), JSON.stringify(listed.config_files));
+      const loaded = await call({ action: 'load', domain: good.domain, page: good.page });
+      assert.equal(loaded.status, 'ok');
+      assert.equal(JSON.parse(loaded.config).actions.greet.type, 'click');
+      const absent = await call({ action: 'load', domain: good.domain, page: 'never-saved' });
+      assert.equal(absent.status, 'missing');
+    });
+
+    await verify('the tool reports a malformed configuration instead of resolving nothing', async () => {
+      await assert.rejects(() => call({ action: 'check', config: '{ not json' }), /not valid JSON/);
+      await assert.rejects(() => call({ action: 'check', config: asText({ version: 1, domain: 'd', page: 'p', cards: { locator: { ref: 'e3' } }, actions: { a: { scope: 'card', type: 'read', locator: { tag: 'b' } } } }) }), /invalid site configuration at/);
+      await assert.rejects(() => call({ action: 'nonsense' }), /unknown action/);
+      await assert.rejects(() => call({ action: 'check' }), /required for action/);
+    });
+
+    await verify('the renderer produces text, not raw JSON', async () => {
+      const value = await call({ action: 'check', config: asText(good) });
+      const blocks = tool('browser_site_config').output.render({ action: 'check' }, value);
+      assert.ok(Array.isArray(blocks) && blocks.length > 0 && typeof blocks[0].text === 'string');
+      assert.match(blocks[0].text, /verdict: usable/);
+      assert.match(blocks[0].text, /can send: yes/);
+    });
+  } finally {
+    await tool('browser_close')?.execute({ all: true }, { signal }).catch(() => {});
+    await rm(toolProfile, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+server.close();
 
 console.log(`\n===== ${failures} failure(s) =====`);
 process.exit(failures === 0 ? 0 : 1);
