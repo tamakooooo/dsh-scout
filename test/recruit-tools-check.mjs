@@ -68,7 +68,7 @@ const ctx = {
   get: () => undefined,
   inject: () => () => {},
 };
-const handle = apply(ctx, { headless: true, viewer: false, profileDir: join(tmpdir(), `jev-recruit-tools-${process.pid}`), minActionDelayMs: 0, maxActionDelayMs: 0, cooldownEveryActions: 0 });
+const handle = apply(ctx, { headless: true, viewer: true, viewerPort: 0, profileDir: join(tmpdir(), `jev-recruit-tools-${process.pid}`), minActionDelayMs: 120, maxActionDelayMs: 120, cooldownEveryActions: 0 });
 const tool = (name) => definitions.find((definition) => definition.name === name);
 const signal = new AbortController().signal;
 const call = (name, args) => tool(name).execute(args, { signal });
@@ -142,6 +142,63 @@ try {
     assert.equal(done.sent, 6, `${done.sent} sent: ${done.note}`);
     const recorded = await readAuthorizations();
     assert.equal(recorded.length, 1, 'the approval was not written to the audit file');
+  });
+
+  await verify('the board sees the task, and the request waiting on a person', async () => {
+    // The board reads the same object the tools read, through the same monitor, so this is the
+    // path the page actually takes rather than a second implementation of it.
+    const viewerUrl = handle.viewer.url;
+    assert.ok(viewerUrl, 'the viewer did not listen, so the board has nothing to read');
+    const state = await (await fetch(new URL('state.json', viewerUrl))).json();
+    assert.ok(state.task, 'state.json carries no task');
+    assert.equal(state.task.windows.length, 2, JSON.stringify(state.task.windows));
+    assert.equal(state.task.spend.limit, 6);
+    assert.ok(state.task.startedAt, 'the board cannot say when the run began');
+  });
+
+  await verify('the board can approve the request, and the refusal is not a fault', async () => {
+    // A fresh request, to prove the route reaches the same task rather than only the tools.
+    const asked = await call('browser_recruit', { action: 'request_authorization', account: 'example.test', posting: posting.id, limit: 3 });
+    assert.equal(asked.requested, true);
+    const viewerUrl = handle.viewer.url;
+    const before = await (await fetch(new URL('state.json', viewerUrl))).json();
+    assert.ok(before.task.requestedAuthorization, 'the pending request is not on the board');
+    const id = before.task.requestedAuthorization.id;
+    assert.ok(id, 'the request has no id, so the board cannot answer it');
+    const response = await fetch(new URL('decide', viewerUrl), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target: '', verdict: 'grant', id }),
+    });
+    assert.equal(response.status, 200, `the board's approval was refused: ${await response.text()}`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const after = await (await fetch(new URL('state.json', viewerUrl))).json();
+    assert.equal(after.task.requestedAuthorization, null, 'the request is still pending after approval');
+    assert.equal(after.task.authorization.limit, 3, 'the approval did not come into force');
+    const recorded = await readAuthorizations();
+    assert.equal(recorded.length, 2, 'the board approval was not written to the audit file');
+  });
+
+  await verify('the board can stop the task', async () => {
+    const viewerUrl = handle.viewer.url;
+    // Start a run first: stopping one that has already finished proves nothing about stopping.
+    const started = await call('browser_recruit', { action: 'start', account: 'example.test', posting: posting.id, site_config: JSON.stringify(siteConfig), url, windows: 2, limit: 6 });
+    assert.equal(started.status, 'running', started.note);
+    const response = await fetch(new URL('control', viewerUrl), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'stop', reason: 'board stop' }),
+    });
+    assert.equal(response.status, 200, `the stop was refused: ${await response.text()}`);
+    const state = await (await fetch(new URL('state.json', viewerUrl))).json();
+    assert.equal(state.task.state, 'stopped', `state was ${state.task.state}`);
+  });
+
+  await verify('an unknown control action is refused rather than ignored', async () => {
+    const response = await fetch(new URL('control', handle.viewer.url), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'explode' }),
+    });
+    assert.equal(response.status, 409);
+    assert.match(await response.text(), /unknown control action/);
   });
 
   await verify('stopping is reported as a state, not as a failure', async () => {

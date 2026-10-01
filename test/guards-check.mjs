@@ -207,7 +207,10 @@ console.log('\n=== live view decision ===');
   } else {
     const pre = await post({ target: '删除', verdict: 'grant', id: 'not-a-pending-id' });
     check('a target that is not pending cannot be pre-authorized', pre.status === 409, `HTTP ${pre.status}`);
-    check('an empty target is refused', (await post({ target: '', verdict: 'grant', id: 'x' })).status === 400);
+    // The route checks the shape and the handler checks the meaning. A target is no longer
+    // required: an authorisation request has an id and no target label. An id that names
+    // nothing is refused by the handler, which is the 409 here.
+    check('an id that names nothing is refused', (await post({ target: '', verdict: 'grant', id: 'no-such-id' })).status === 409);
     check('a decision without an id is refused', (await post({ target: 'x', verdict: 'grant' })).status === 400);
     check('an unknown verdict is refused', (await post({ target: 'x', verdict: 'maybe', id: 'x' })).status === 400);
     const state = await (await fetch(at('state.json'))).json();
@@ -256,7 +259,8 @@ console.log('\n=== board routes on the app server ===');
 
     const pre = await post({ target: '删除', verdict: 'grant', id: 'not-a-pending-id' });
     check('the same one-shot check applies there', pre.status === 409, `HTTP ${pre.status}`);
-    check('malformed decisions are still refused', (await post({ target: '', verdict: 'grant', id: 'x' })).status === 400);
+    check('malformed decisions are still refused', (await post({ target: 'x', verdict: 'maybe', id: 'x' })).status === 400);
+    check('an id that names nothing is refused here too', (await post({ target: '', verdict: 'grant', id: 'no-such-id' })).status === 409);
 
     await new Promise((resolve) => server.close(resolve));
   }

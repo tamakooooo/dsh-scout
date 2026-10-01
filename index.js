@@ -196,7 +196,18 @@ export function apply(ctx, config) {
 
   const viewer = new Viewer({
     log: (message) => ctx.logger?.debug?.(`[jev-browser] ${message}`),
-    ...createMonitor({ sessions, pacing, journal }),
+    ...createMonitor({ sessions, pacing, journal, task }),
+    // The board's controls. They call the same task the tools call, so a stop from the page
+    // and a stop from the conversation are one stop.
+    control: async (action, worker, reason) => {
+      const target = worker || 'w1';
+      if (action === 'stop') return task.stop(reason || '看板停止');
+      if (action === 'pause') return task.pause(target, reason || '看板暂停');
+      if (action === 'resume') return task.resume(target);
+      if (action === 'takeover') return task.takeover(target, reason || '人工接管');
+      if (action === 'release') return task.release(target);
+      throw new Error(`unknown control action ${JSON.stringify(action)}`);
+    },
     decide: (target, verdict, id) => {
       // An authorisation request is answered here, and only here. No tool can approve one, so
       // the board is the single path by which a standing permission comes into force.

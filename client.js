@@ -177,6 +177,7 @@ window.__ModuleLoader__.load({
       const total = (state && state.totals) || {};
       const events = (state && state.events) || [];
       const sessions = (state && state.sessions) || [];
+      const task = (state && state.task) || null;
       const tabs = (state && state.tabs) || [];
       // One stop per session: with several sessions working, several can be waiting at once,
       // and each one has its own decision id — so every stop is rendered and answered
@@ -191,6 +192,20 @@ window.__ModuleLoader__.load({
       const pendings = (state && state.pendings && state.pendings.length)
         ? state.pendings
         : (state && state.pending ? [state.pending] : []);
+
+      // The board's controls call the same task the tools call, so a stop from this page and a
+      // stop from the conversation are one stop.
+      const control = (action, worker, reason) => {
+        setBusy(true);
+        fetch(MOUNT + '/control', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action, worker, reason }),
+        })
+          .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); })
+          .catch((e) => setError(String(e && e.message ? e.message : e)))
+          .then(() => setBusy(false));
+      };
 
       const decide = (stop, verdict) => {
         if (!stop) return;
@@ -252,6 +267,49 @@ window.__ModuleLoader__.load({
             ]),
           ]),
           h('div', { className: 'jev-right', key: 'r' }, [
+            h('div', { className: 'jev-sec', key: 'task' }, [
+              h('h3', { key: 'h' }, '招聘任务'),
+              task
+                ? h('div', { key: 'b' }, [
+                    h('div', { key: 'state' }, [
+                      h('span', { key: 's' }, task.state + (task.account ? ' · ' + task.account : '') + (task.posting ? ' · ' + task.posting : '')),
+                    ]),
+                    h('div', { className: 'jev-dim', key: 'spend' },
+                      '联系 ' + task.spend.spent + ' / ' + task.spend.limit + '（余 ' + task.spend.remaining + '）'),
+                    // The authorisation request. Approving it here is one of only two ways it can
+                    // come into force; no tool can grant it.
+                    task.requestedAuthorization
+                      ? h('div', { className: 'jev-pending', key: 'auth', style: { marginTop: '6px' } }, [
+                          h('div', { key: 't' }, '授权请求：' + task.requestedAuthorization.actions.join('、') +
+                            ' · ' + task.requestedAuthorization.account +
+                            ' · ' + task.requestedAuthorization.posting +
+                            ' · 上限 ' + task.requestedAuthorization.limit),
+                          h('div', { className: 'jev-dim', key: 'n' }, task.requestedAuthorization.expiresAt
+                            ? '有效期至 ' + task.requestedAuthorization.expiresAt : '无到期时间'),
+                          h('div', { style: { marginTop: '8px', display: 'flex', gap: '6px' }, key: 'btn' }, [
+                            h('button', { className: 'jev-btn primary', disabled: busy, key: 'g',
+                              onClick: () => decide({ id: task.requestedAuthorization.id }, 'grant') }, '批准授权'),
+                            h('button', { className: 'jev-btn', disabled: busy, key: 'd',
+                              onClick: () => decide({ id: task.requestedAuthorization.id }, 'deny') }, '拒绝'),
+                          ]),
+                        ])
+                      : null,
+                    task.windows && task.windows.length > 0
+                      ? h('div', { key: 'w', style: { marginTop: '6px' } }, task.windows.map((window) => h('div', { className: 'jev-row', key: window.name }, [
+                          h('span', { key: 'n', style: { marginRight: '6px' } }, window.name),
+                          h('span', { className: 'jev-dim', key: 'd' }, window.state + (window.candidate ? ' · ' + window.candidate : '')),
+                        ])))
+                      : null,
+                    task.state === 'running'
+                      ? h('div', { style: { marginTop: '8px', display: 'flex', gap: '6px' }, key: 'ctl' }, [
+                          h('button', { className: 'jev-btn', disabled: busy, key: 's', onClick: () => control('stop') }, '统一停止'),
+                          h('button', { className: 'jev-btn', disabled: busy, key: 'p', onClick: () => control('pause', 'w1') }, '暂停 w1'),
+                          h('button', { className: 'jev-btn', disabled: busy, key: 'r', onClick: () => control('resume', 'w1') }, '继续 w1'),
+                        ])
+                      : null,
+                  ])
+                : h('div', { className: 'jev-dim', key: 'none' }, '没有正在运行的任务'),
+            ]),
             h('div', { className: 'jev-sec', key: 'p' }, [
               h('h3', { key: 'h' }, pendings.length > 1 ? '待批准 (' + pendings.length + ')' : '待批准'),
               pendings.length
