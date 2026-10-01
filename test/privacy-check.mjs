@@ -157,6 +157,23 @@ console.log('\n=== the roots ===');
   }
 }
 
+// ── 3b. the specification's examples must be runnable ────────────────────────
+// A spec whose JSON examples do not parse cannot be validated by a reader or a machine, and
+// two of the three in SITE_CONFIG_SPEC.md were invalid when first written — placeholder
+// ellipses in place of values. This is the cheap way to stop that happening again.
+console.log('\n=== the site-config spec examples ===');
+{
+  const { readFileSync } = await import('node:fs');
+  const spec = readFileSync(join(PLUGIN_ROOT, 'docs/SITE_CONFIG_SPEC.md'), 'utf8');
+  const blocks = [...spec.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => m[1]);
+  check('the spec has JSON examples', blocks.length >= 3, `found ${blocks.length}`);
+  let invalid = 0;
+  for (const block of blocks) {
+    try { JSON.parse(block); } catch { invalid += 1; }
+  }
+  check(`all ${blocks.length} spec examples parse as JSON`, invalid === 0, `${invalid} did not`);
+}
+
 // ── 4. the real repository ───────────────────────────────────────────────────
 console.log('\n=== every git-tracked file ===');
 {

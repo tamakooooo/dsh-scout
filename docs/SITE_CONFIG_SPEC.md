@@ -24,7 +24,7 @@
   "attr": [{ "name": "data-id", "equals": "..." }],
   "href": { "matches": "resume/(\\d+)" },
   "nth": 0,
-  "within": { "…另一个定位器…" }
+  "within": { "tag": "div", "attr": [{ "name": "data-role", "equals": "card" }] }
 }
 ```
 
@@ -115,11 +115,11 @@
 ```json
 {
   "version": 1,
-  "domain": "…",
+  "domain": "example.com",
   "page": "candidate-list",
   "markers": [
-    { "kind": "exists", "locator": { "…" } },
-    { "kind": "text", "locator": { "…" }, "contains": "推荐人才" }
+    { "kind": "exists", "locator": { "attr": [{ "name": "data-role", "equals": "card" }] } },
+    { "kind": "text", "locator": { "attr": [{ "name": "class", "contains": "job-pane" }] }, "contains": "推荐人才" }
   ],
   "validated": { "at": "<ISO 时间>", "hitRate": 0.95, "cards": 20, "version": 1 }
 }
