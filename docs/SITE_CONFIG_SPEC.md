@@ -73,7 +73,9 @@
 
 ## 4. inspect：返回结构与预算
 
-`browser_snapshot` 的 inspect 模式返回：
+**实现说明**：工具名是 `browser_inspect`，而不是给 `browser_snapshot` 加一个 `inspect` 模式。两者输出的**字段集合完全不同**（快照是文本＋扁平元素表，inspect 是有界节点树＋重复组），塞进一个工具只能靠联合 schema 表达，还会弄脏原来那句「这就是决策层看到的状态」。拆分后各自的 schema 都是封闭的，各自可校验。
+
+新的读取工具 `browser_inspect` 返回：
 
 - `snapshotId`、`targetId`
 - `cards`：最多 `sample`（默认 20）张卡的公共结构，不是每张卡的完整 DOM

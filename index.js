@@ -51,6 +51,14 @@ const DEFAULTS = {
   maxSteps: 8,
   maxElements: 60,
   maxStateChars: 6000,
+  // The structural sample that a site configuration is learned from. Fixed caps, not
+  // "as complete as possible": a recruiting list runs to tens of thousands of tokens, and a
+  // sample that quietly stops being bounded is worse than none, because callers keep trusting it.
+  inspectDepth: 6,
+  inspectNodes: 120,
+  inspectAttributes: 5,
+  inspectSamples: 20,
+  inspectCharacters: 12000,
   confidenceFloor: 0.5,
   // Politeness defaults: slow enough not to look like a script, bounded enough that a
   // mistake cannot spend a whole day's quota before anyone notices.
@@ -130,6 +138,11 @@ export function resolveConfig(raw) {
     headless: input.headless === true,
     maxSteps: integer(input.maxSteps, DEFAULTS.maxSteps, 1, 20),
     maxElements: integer(input.maxElements, DEFAULTS.maxElements, 1, 200),
+    inspectDepth: integer(input.inspectDepth, DEFAULTS.inspectDepth, 1, 10),
+    inspectNodes: integer(input.inspectNodes, DEFAULTS.inspectNodes, 10, 300),
+    inspectAttributes: integer(input.inspectAttributes, DEFAULTS.inspectAttributes, 1, 8),
+    inspectSamples: integer(input.inspectSamples, DEFAULTS.inspectSamples, 0, 50),
+    inspectCharacters: integer(input.inspectCharacters, DEFAULTS.inspectCharacters, 500, 40000),
     maxStateChars: integer(input.maxStateChars, DEFAULTS.maxStateChars, 500, 40000),
     confidenceFloor: decimal(input.confidenceFloor, DEFAULTS.confidenceFloor, 0, CONFIDENCE_MAX_SCORE),
     minActionDelayMs: minDelay,
