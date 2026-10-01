@@ -34,6 +34,7 @@ async function verify(name, run) {
 const posting = {
   version: 1,
   id: 'quality-engineer',
+  platform: 'zhaopin',
   title: '质量工程师',
   description: '汽车零部件质量',
   must: [
@@ -61,7 +62,11 @@ const refusal = (label, mutate) => {
 
 console.log('=== the format refuses what it should ===');
 await verify('a well-formed posting is accepted', async () => { validatePosting(posting); });
-await refusal('an unknown top-level key', (p) => { p.platform = 'zhaopin'; });
+// `platform` used to be the example of an unknown key; it is a required field now, so the
+// example is a key that is genuinely unknown and the platform rules are asserted on their own.
+await refusal('an unknown top-level key', (p) => { p.contactLimit = 10; });
+await refusal('a posting with no platform', (p) => { delete p.platform; });
+await refusal('a posting on a platform that does not exist', (p) => { p.platform = 'mastodon'; });
 await refusal('an unknown rule key', (p) => { p.must[0].required = true; });
 await refusal('an unknown operator', (p) => { p.must[0].op = 'sounds-good'; });
 await refusal('no requirements at all', (p) => { p.must = []; });
@@ -152,7 +157,7 @@ console.log('\n=== storage in the local root ===');
 await verify('a posting round-trips and appears in the list', async () => {
   const path = await savePosting(posting);
   assert.ok(path.startsWith(localDir('postings')), `saved outside the local root: ${path}`);
-  const loaded = await loadPosting({ id: 'quality-engineer' });
+  const loaded = await loadPosting({ id: 'quality-engineer', platform: 'zhaopin' });
   assert.equal(loaded.title, '质量工程师');
   assert.equal(loaded.limits.contacts, 20);
   const listed = await listPostings();
@@ -161,19 +166,22 @@ await verify('a posting round-trips and appears in the list', async () => {
 
 await verify('saving the same id replaces it atomically', async () => {
   await savePosting({ ...posting, title: '质量工程师（改）' });
-  assert.equal((await loadPosting({ id: 'quality-engineer' })).title, '质量工程师（改）');
+  assert.equal((await loadPosting({ id: 'quality-engineer', platform: 'zhaopin' })).title, '质量工程师（改）');
   const files = (await listPostings()).filter((entry) => entry.id === 'quality-engineer');
   assert.equal(files.length, 1, 'the same id produced two entries');
 });
 
 await verify('no saved posting reads as absent, not as an error', async () => {
-  assert.equal(await loadPosting({ id: 'never-saved' }), null);
+  assert.equal(await loadPosting({ id: 'never-saved', platform: 'zhaopin' }), null);
+  // Without a platform the reader refuses rather than guessing which one.
+  await assert.rejects(() => loadPosting({ id: 'quality-engineer' }), /stored per platform/);
+  await assert.rejects(() => loadPosting({ id: 'x', platform: 'mastodon' }), /unknown platform/);
 });
 
 await verify('a corrupt posting throws instead of reading as absent', async () => {
-  await writeFile(join(localDir('postings'), 'broken.json'), '{ not json', 'utf8');
-  await assert.rejects(() => loadPosting({ id: 'broken' }), /not valid JSON/);
-  const listed = await listPostings();
+  await writeFile(join(localDir('postings'), 'zhaopin--broken.json'), '{ not json', 'utf8');
+  await assert.rejects(() => loadPosting({ id: 'broken', platform: 'zhaopin' }), /not valid JSON/);
+  const listed = await listPostings({ platform: 'zhaopin' });
   assert.ok(listed.some((entry) => entry.id === 'broken' && entry.error), 'a corrupt file was silently skipped in the list');
 });
 
@@ -182,5 +190,32 @@ await verify('loading without an id is a programming error, not a silent miss', 
 });
 
 await rm(localDir('postings'), { recursive: true, force: true }).catch(() => {});
+// ── the same job on two platforms is two postings ────────────────────────────
+console.log('\n=== postings are per platform ===');
+await verify('the same id on two platforms is two files that do not see each other', async () => {
+  const zhaopin = { ...posting, platform: 'zhaopin', title: '质量工程师（智联）' };
+  const zhipin = { ...posting, platform: 'zhipin', title: '质量工程师（BOSS）' };
+  await savePosting(zhaopin);
+  await savePosting(zhipin);
+  assert.equal((await loadPosting({ id: posting.id, platform: 'zhaopin' })).title, '质量工程师（智联）');
+  assert.equal((await loadPosting({ id: posting.id, platform: 'zhipin' })).title, '质量工程师（BOSS）');
+  const onZhaopin = await listPostings({ platform: 'zhaopin' });
+  assert.ok(!onZhaopin.some((entry) => entry.title === '质量工程师（BOSS）'), 'another platform\'s posting was listed');
+  const everywhere = await listPostings();
+  assert.ok(everywhere.some((entry) => entry.platform === 'zhipin'), 'listing everything missed a platform');
+});
+
+await verify('a posting saved before platforms were named is reported, not hidden', async () => {
+  await writeFile(join(localDir('postings'), 'legacy-job.json'), JSON.stringify({ ...posting, platform: undefined }), 'utf8');
+  const listed = await listPostings();
+  const legacy = listed.find((entry) => entry.id === 'legacy-job');
+  assert.ok(legacy, 'an unscoped posting vanished from the list');
+  assert.equal(legacy.platform, null);
+  assert.match(legacy.error, /before postings named a platform/);
+  // And listing one platform does not silently include it.
+  const onZhaopin = await listPostings({ platform: 'zhaopin' });
+  assert.ok(!onZhaopin.some((entry) => entry.id === 'legacy-job'), 'an unscoped posting was attributed to a platform');
+});
+
 console.log(`\n===== ${failures} failure(s) =====`);
 process.exit(failures === 0 ? 0 : 1);

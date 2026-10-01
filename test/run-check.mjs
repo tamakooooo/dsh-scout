@@ -42,7 +42,10 @@ async function verify(name, run) {
 
 const siteConfig = {
   version: 1,
-  domain: '127.0.0.1',
+  // The config names the platform's page. The fixture is served from loopback, but the
+  // configuration describes where this page lives on the real site, and the run checks the two
+  // agree — there is no loopback escape in the guard itself.
+  domain: 'rd6.zhaopin.com',
   page: 'candidate-list',
   markers: [{ kind: 'exists', locator: { tag: 'ul', attr: [{ name: 'id', equals: 'list' }] } }],
   cards: {
@@ -53,7 +56,7 @@ const siteConfig = {
   actions: { greet: { scope: 'card', type: 'click', effect: 'quota', locator: { tag: 'button', text: { equals: '打招呼' } } } },
 };
 const account = 'example.test';
-const mustAll = { version: 2, id: 'quality-engineer', title: '质量工程师', must: [{ field: 'name', op: 'exists' }], greeting: '您好' };
+const mustAll = { version: 2, id: 'quality-engineer', platform: 'zhaopin', title: '质量工程师', must: [{ field: 'name', op: 'exists' }], greeting: '您好' };
 
 const html = await readFile(new URL('./fixtures/cards-inspect.html', import.meta.url), 'utf8');
 const server = createServer((req, res) => {
@@ -71,7 +74,7 @@ const pacingFor = () => new Pacing(config);
 let storeSeq = 0;
 const newStore = () => new Records({ file: join(tmpdir(), `jev-run-records-${process.pid}-${storeSeq++}.jsonl`) });
 const authorizationFor = (limit) => createAuthorization({
-  account, posting: mustAll.id, postingVersion: mustAll.version, siteVersion: 1,
+  platform: 'zhaopin', account, posting: mustAll.id, postingVersion: mustAll.version, siteVersion: 1,
   actions: ['greet'], greetingVersion: mustAll.greeting, limit,
 });
 

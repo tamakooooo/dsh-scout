@@ -33,6 +33,7 @@ async function verify(name, run) {
 }
 
 const base = {
+  platform: 'zhaopin',
   account: 'zhaopin:马某',
   posting: 'quality-engineer',
   postingVersion: 3,
@@ -42,7 +43,7 @@ const base = {
   expiresAt: '2027-01-01T00:00:00.000Z',
   greetingVersion: 'v2',
 };
-const request = { account: base.account, posting: base.posting, postingVersion: 3, siteVersion: 1, greetingVersion: 'v2', action: 'greet' };
+const request = { platform: base.platform, account: base.account, posting: base.posting, postingVersion: 3, siteVersion: 1, greetingVersion: 'v2', action: 'greet' };
 
 console.log('=== the range has to be nameable ===');
 {
@@ -195,7 +196,7 @@ console.log('\n=== the authorisation itself is on record ===');
   await verify('it round-trips with its range and time', async () => {
     const authorization = createAuthorization({ ...base, note: 'user approved 20 greetings' });
     const file = await recordAuthorization(authorization);
-    assert.equal(file, authorisationFile());
+    assert.equal(file, authorisationFile('zhaopin'));
     const entries = await readAuthorizations();
     assert.equal(entries.length >= 1, true);
     const stored = entries[entries.length - 1];
@@ -205,7 +206,7 @@ console.log('\n=== the authorisation itself is on record ===');
   });
 
   await verify('an unreadable line throws rather than being skipped', async () => {
-    await appendFile(authorisationFile(), '{ not json\n', 'utf8');
+    await appendFile(authorisationFile('zhaopin'), '{ not json\n', 'utf8');
     await assert.rejects(() => readAuthorizations(), /unreadable line/);
   });
 
@@ -216,6 +217,37 @@ console.log('\n=== the authorisation itself is on record ===');
   });
 }
 
-await rm(authorisationFile(), { force: true }).catch(() => {});
+await rm(authorisationFile('zhaopin'), { force: true }).catch(() => {});
+// ── one grant, one platform ──────────────────────────────────────────────────
+console.log('\n=== an authorisation is for one platform ===');
+await verify('a grant that names no platform is refused', async () => {
+  await assert.rejects(async () => createAuthorization({ ...base, platform: undefined }), /platform is required/);
+});
+await verify('a grant on a platform that does not exist is refused', async () => {
+  await assert.rejects(async () => createAuthorization({ ...base, platform: 'mastodon' }), /platform must be one of zhaopin, zhipin, 51job, liepin/);
+});
+await verify('a grant for one platform does not cover another', async () => {
+  const authorization = createAuthorization(base);
+  assert.equal(authorizationCovers(authorization, { ...request, platform: 'zhaopin' }).ok, true);
+  const verdict = authorizationCovers(authorization, { ...request, platform: 'zhipin' });
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.reason, /for zhaopin, not zhipin/);
+  // And a request that does not name a platform is judged on the other dimensions, not refused
+  // for silence: the caller may simply not have restated it.
+  assert.equal(authorizationCovers(authorization, request).ok, true);
+});
+await verify('each platform keeps its own audit file', async () => {
+  const zhaopin = await recordAuthorization(createAuthorization({ ...base, platform: 'zhaopin' }));
+  const zhipin = await recordAuthorization(createAuthorization({ ...base, platform: 'zhipin', account: 'zhipin:马某' }));
+  assert.notEqual(zhaopin, zhipin, 'both platforms wrote to the same audit file');
+  assert.match(zhaopin, /zhaopin--authorizations\.jsonl$/);
+  assert.equal((await readAuthorizations('zhaopin')).length, 1);
+  assert.equal((await readAuthorizations('zhipin')).length, 1);
+  assert.equal((await readAuthorizations()).length, 2, 'reading every platform did not find both');
+  assert.equal((await readAuthorizations('liepin')).length, 0, 'one platform saw another platform\'s grants');
+  assert.throws(() => authorisationFile('mastodon'), /unknown platform/);
+  assert.throws(() => authorisationFile(), /per platform/);
+});
+
 console.log(`\n===== ${failures} failure(s) =====`);
 process.exit(failures === 0 ? 0 : 1);

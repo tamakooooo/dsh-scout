@@ -38,7 +38,10 @@ async function verify(name, run) {
 
 const siteConfig = {
   version: 1,
-  domain: '127.0.0.1',
+  // The config names the platform's page. The fixture is served from loopback, but the
+  // configuration describes where this page lives on the real site, and the run checks the two
+  // agree — there is no loopback escape in the guard itself.
+  domain: 'rd6.zhaopin.com',
   page: 'candidate-list',
   markers: [{ kind: 'exists', locator: { tag: 'ul', attr: [{ name: 'id', equals: 'list' }] } }],
   cards: {
@@ -56,6 +59,7 @@ const siteConfig = {
 const posting = {
   version: 1,
   id: 'quality-engineer',
+  platform: 'zhaopin',
   title: '质量工程师',
   must: [
     { field: 'city', op: 'in', value: ['广州', '深圳'] },

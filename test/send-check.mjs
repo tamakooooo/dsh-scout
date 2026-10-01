@@ -44,7 +44,10 @@ async function verify(name, run) {
 
 const siteConfig = {
   version: 1,
-  domain: '127.0.0.1',
+  // The config names the platform's page. The fixture is served from loopback, but the
+  // configuration describes where this page lives on the real site, and the run checks the two
+  // agree — there is no loopback escape in the guard itself.
+  domain: 'rd6.zhaopin.com',
   page: 'candidate-list',
   markers: [{ kind: 'exists', locator: { tag: 'ul', attr: [{ name: 'id', equals: 'list' }] } }],
   cards: {
@@ -57,7 +60,7 @@ const siteConfig = {
   },
   actions: { greet: { scope: 'card', type: 'click', effect: 'quota', locator: { tag: 'button', text: { equals: '打招呼' } } } },
 };
-const posting = { version: 2, id: 'quality-engineer', title: '质量工程师', must: [{ field: 'city', op: 'in', value: ['广州'] }], greeting: '您好' };
+const posting = { version: 2, id: 'quality-engineer', platform: 'zhaopin', title: '质量工程师', must: [{ field: 'city', op: 'in', value: ['广州'] }], greeting: '您好' };
 const account = 'example.test';
 
 const ok = await readFile(new URL('./fixtures/cards-inspect.html', import.meta.url), 'utf8');
@@ -94,7 +97,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     const outcome = await attempt({ store, spend, authorization });
     assert.equal(outcome.outcome, 'confirmed', `${outcome.outcome}: ${outcome.reason}`);
     assert.equal(outcome.verdict, 'verified');
@@ -106,7 +109,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     await attempt({ store, spend, authorization });
     const entries = await store.readAll();
     assert.equal(entries.length, 2, JSON.stringify(entries));
@@ -121,7 +124,7 @@ try {
     await navigate(session.cdp, session.sessionId, `${base}/failed`);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     const outcome = await attempt({ store, spend, authorization });
     assert.equal(outcome.outcome, 'failed', `${outcome.outcome}: ${outcome.reason}`);
     assert.equal(outcome.verdict, 'refuted');
@@ -133,7 +136,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     // A page whose success phrase never appears: the click landed, the result is unknown.
     const outcome = await attempt({ store, spend, authorization, extra: { config: { ...config, successPatterns: ['永远不会出现的文案'] } } });
     assert.equal(outcome.outcome, 'executed_unverified', `${outcome.outcome}: ${outcome.reason}`);
@@ -146,7 +149,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     const outcome = await sendGreeting({
       ctx: {}, config, cdp: session.cdp, sessionId: session.sessionId, siteConfig, posting, account,
       identity: 'C-nobody', authorization, spend, records: store, allowModel: false,
@@ -172,7 +175,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account: 'someone-else', posting: posting.id, actions: ['greet'], limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account: 'someone-else', posting: posting.id, actions: ['greet'], limit: 5 });
     const outcome = await attempt({ store, spend, authorization });
     assert.equal(outcome.outcome, 'refused');
     assert.match(outcome.reason, /account/);
@@ -183,7 +186,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 1 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 1 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 1 });
     assert.equal((await attempt({ store, spend, authorization })).outcome, 'confirmed');
     // Reload first: the greeting the last attempt sent changed the button's text, so the
     // locator would no longer match and the refusal would be about resolution, not the limit.
@@ -198,7 +201,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     const control = new Control();
     control.stop('the operator pressed stop');
     const outcome = await attempt({ store, spend, authorization, control });
@@ -212,7 +215,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     const control = new Control();
     control.pause('w1', '等待确认');
     assert.equal((await attempt({ store, spend, authorization, control })).outcome, 'held');
@@ -224,7 +227,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const store = newStore();
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     const control = new Control();
     control.takeover('w1');
     control.release('w1');
@@ -252,7 +255,7 @@ try {
     await navigate(session.cdp, session.sessionId, base);
     const file = join(tmpdir(), `jev-send-once-${process.pid}.jsonl`);
     const spend = new Spend({ limit: 5 });
-    const authorization = createAuthorization({ account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
+    const authorization = createAuthorization({ platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1, actions: ['greet'], greetingVersion: posting.greeting, limit: 5 });
     const first = await attempt({ store: new Records({ file }), spend, authorization });
     assert.equal(first.outcome, 'confirmed');
     const decision = await new Records({ file }).decide('C-1001', { account, action: 'greet' });

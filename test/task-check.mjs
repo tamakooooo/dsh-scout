@@ -39,7 +39,10 @@ async function verify(name, run) {
 
 const siteConfig = {
   version: 1,
-  domain: '127.0.0.1',
+  // The config names the platform's page. The fixture is served from loopback, but the
+  // configuration describes where this page lives on the real site, and the run checks the two
+  // agree — there is no loopback escape in the guard itself.
+  domain: 'rd6.zhaopin.com',
   page: 'candidate-list',
   markers: [{ kind: 'exists', locator: { tag: 'ul', attr: [{ name: 'id', equals: 'list' }] } }],
   cards: {
@@ -49,7 +52,7 @@ const siteConfig = {
   fields: { name: { locator: { tag: 'span', attr: [{ name: 'class', equals: 'nm' }] } } },
   actions: { greet: { scope: 'card', type: 'click', effect: 'quota', locator: { tag: 'button', text: { equals: '打招呼' } } } },
 };
-const posting = { version: 1, id: 'quality-engineer', title: '质量工程师', must: [{ field: 'name', op: 'exists' }], greeting: '您好', limits: { contacts: 10, windows: 2 } };
+const posting = { version: 1, id: 'quality-engineer', platform: 'zhaopin', title: '质量工程师', must: [{ field: 'name', op: 'exists' }], greeting: '您好', limits: { contacts: 10, windows: 2 } };
 const account = 'example.test';
 
 const html = await readFile(new URL('./fixtures/cards-inspect.html', import.meta.url), 'utf8');
@@ -72,7 +75,7 @@ const newTask = () => new Task({
   pacing: new Pacing(config),
 });
 const authorizationFor = (task, limit = 6) => task.authorize({
-  account, posting: posting.id, postingVersion: posting.version, siteVersion: 1,
+  platform: 'zhaopin', account, posting: posting.id, postingVersion: posting.version, siteVersion: 1,
   actions: ['greet'], greetingVersion: posting.greeting, limit,
 });
 

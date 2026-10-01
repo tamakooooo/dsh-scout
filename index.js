@@ -192,9 +192,15 @@ export function apply(ctx, config) {
   const journal = new Journal();
   // What survives a run: who was contacted and what is known about how it went. One instance
   // per plugin, because the account is one account and the guard has to see every window.
-  const records = new Records();
+  // One store per platform, created on first use. A single shared store would merge four
+  // contact histories, and a contact on one platform is not a contact on another.
+  const recordsByPlatform = new Map();
+  const recordsFor = (platform) => {
+    if (!recordsByPlatform.has(platform)) recordsByPlatform.set(platform, new Records({ platform }));
+    return recordsByPlatform.get(platform);
+  };
   // The run itself: stop, pause, takeover, its windows, and the allowance it spends from.
-  const task = new Task({ config: resolved, sessions, records, pacing });
+  const task = new Task({ config: resolved, sessions, recordsFor, pacing });
 
   const viewer = new Viewer({
     log: (message) => ctx.logger?.debug?.(`[jev-browser] ${message}`),
@@ -275,7 +281,7 @@ export function apply(ctx, config) {
     },
   });
 
-  for (const definition of buildTools({ ctx, config: resolved, sessions, pacing, viewer, journal, records, task })) {
+  for (const definition of buildTools({ ctx, config: resolved, sessions, pacing, viewer, journal, recordsFor, task })) {
     ctx.tools.register(definition);
   }
 
@@ -326,5 +332,5 @@ export function apply(ctx, config) {
   // A handle on what this instance built. The board and the tests both need to reach the same
   // task the tools use: an authorisation approved on a different object would be a grant that
   // nothing consults, which is exactly the failure this wiring exists to prevent.
-  return { sessions, pacing, journal, records, task, viewer };
+  return { sessions, pacing, journal, recordsFor, task, viewer };
 }

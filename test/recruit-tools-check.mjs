@@ -34,6 +34,7 @@ async function verify(name, run) {
 const posting = {
   version: 1,
   id: 'quality-engineer',
+  platform: 'zhaopin',
   title: '质量工程师',
   must: [{ field: 'name', op: 'exists' }],
   greeting: '您好',
@@ -41,7 +42,10 @@ const posting = {
 };
 const siteConfig = {
   version: 1,
-  domain: '127.0.0.1',
+  // The config names the platform's page. The fixture is served from loopback, but the
+  // configuration describes where this page lives on the real site, and the run checks the two
+  // agree — there is no loopback escape in the guard itself.
+  domain: 'rd6.zhaopin.com',
   page: 'candidate-list',
   markers: [{ kind: 'exists', locator: { tag: 'ul', attr: [{ name: 'id', equals: 'list' }] } }],
   cards: {
@@ -95,10 +99,13 @@ try {
     const saved = await call('browser_posting', { action: 'save', posting: JSON.stringify(posting) });
     assert.equal(saved.status, 'ok', saved.note);
     assert.ok(saved.saved_to.includes('postings'), saved.saved_to);
-    const loaded = await call('browser_posting', { action: 'load', id: posting.id });
+    const loaded = await call('browser_posting', { action: 'load', id: posting.id, platform: 'zhaopin' });
     assert.equal(JSON.parse(loaded.posting).title, '质量工程师');
     const listed = await call('browser_posting', { action: 'list' });
-    assert.ok(listed.postings.some((entry) => entry.startsWith('quality-engineer')), JSON.stringify(listed.postings));
+    // The listing names the platform, because the same job id exists on more than one of them.
+    assert.ok(listed.postings.some((entry) => entry === 'zhaopin/quality-engineer  质量工程师'), JSON.stringify(listed.postings));
+    const onZhipin = await call('browser_posting', { action: 'list', platform: 'zhipin' });
+    assert.equal(onZhipin.postings.length, 0, `another platform listed this posting: ${JSON.stringify(onZhipin.postings)}`);
   });
 
   await verify('a malformed posting is refused with the path that failed', async () => {
@@ -107,7 +114,7 @@ try {
   });
 
   await verify('an authorisation request is a request, and grants nothing', async () => {
-    const requested = await call('browser_recruit', { action: 'request_authorization', account: 'example.test', posting: posting.id, limit: 6, actions: ['greet'] });
+    const requested = await call('browser_recruit', { action: 'request_authorization', platform: 'zhaopin', account: 'example.test', posting: posting.id, limit: 6, actions: ['greet'] });
     assert.equal(requested.status, 'needs_confirmation');
     assert.equal(requested.requested, true);
     assert.match(requested.requested_summary, /up to 6 contact/);
@@ -118,7 +125,7 @@ try {
   });
 
   await verify('starting before approval is refused, and says why', async () => {
-    const refused = await call('browser_recruit', { action: 'start', account: 'example.test', posting: posting.id, site_config: JSON.stringify(siteConfig), url });
+    const refused = await call('browser_recruit', { action: 'start', platform: 'zhaopin', account: 'example.test', posting: posting.id, site_config: JSON.stringify(siteConfig), url });
     assert.equal(refused.status, 'refused');
     assert.match(refused.note, /no authorisation/);
     assert.equal(refused.state, 'idle', 'a refused start left the task running');
@@ -129,7 +136,7 @@ try {
     // approving a different object would be a grant nothing consults.
     const { authorization } = await handle.task.approveAuthorization({ by: 'test operator' });
     assert.ok(authorization.id.startsWith('auth-'));
-    const started = await call('browser_recruit', { action: 'start', account: 'example.test', posting: posting.id, site_config: JSON.stringify(siteConfig), url, windows: 2, limit: 6 });
+    const started = await call('browser_recruit', { action: 'start', platform: 'zhaopin', account: 'example.test', posting: posting.id, site_config: JSON.stringify(siteConfig), url, windows: 2, limit: 6 });
     assert.equal(started.status, 'running', `${started.status}: ${started.note}`);
     assert.equal(started.spend_limit, 6);
     assert.equal(started.windows.length, 2);
@@ -158,7 +165,7 @@ try {
 
   await verify('the board can approve the request, and the refusal is not a fault', async () => {
     // A fresh request, to prove the route reaches the same task rather than only the tools.
-    const asked = await call('browser_recruit', { action: 'request_authorization', account: 'example.test', posting: posting.id, limit: 3 });
+    const asked = await call('browser_recruit', { action: 'request_authorization', platform: 'zhaopin', account: 'example.test', posting: posting.id, limit: 3 });
     assert.equal(asked.requested, true);
     const viewerUrl = handle.viewer.url;
     const before = await (await fetch(new URL('state.json', viewerUrl))).json();
@@ -181,7 +188,7 @@ try {
   await verify('the board can stop the task', async () => {
     const viewerUrl = handle.viewer.url;
     // Start a run first: stopping one that has already finished proves nothing about stopping.
-    const started = await call('browser_recruit', { action: 'start', account: 'example.test', posting: posting.id, site_config: JSON.stringify(siteConfig), url, windows: 2, limit: 6 });
+    const started = await call('browser_recruit', { action: 'start', platform: 'zhaopin', account: 'example.test', posting: posting.id, site_config: JSON.stringify(siteConfig), url, windows: 2, limit: 6 });
     assert.equal(started.status, 'running', started.note);
     const response = await fetch(new URL('control', viewerUrl), {
       method: 'POST', headers: { 'content-type': 'application/json' },
