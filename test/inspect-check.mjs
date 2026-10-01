@@ -97,9 +97,16 @@ try {
   await check('the repeating cards are reported as repeats and as a group', async () => {
     const repeated = sample.nodes.filter((node) => node.repeats >= 6);
     assert.ok(repeated.length > 0, 'no node reported six or more alike siblings');
-    const group = sample.groups.find((entry) => entry.count >= 6);
-    assert.ok(group, `no group with six members: ${JSON.stringify(sample.groups.map((g) => [g.signature, g.count]))}`);
-    assert.ok(group.examples.some((text) => /先生/.test(text)), `group examples carry no card label: ${JSON.stringify(group.examples)}`);
+    // Identified by what its members are, not by being the first with six: the fixture also
+    // nests a deep chain of divs, and taking whichever group came first made this assertion
+    // depend on the fixture's shape rather than on the cards being found.
+    // The card element itself, not just something that wraps one. The real page nests a single
+    // card inside a wrapper, so the cards are siblings of nothing — and the wrapper group alone
+    // satisfies "a group whose examples look like cards", which is why this names the element.
+    const cardElement = sample.groups.find((entry) => entry.signature.startsWith('li|'));
+    assert.ok(cardElement, `the card element is not a group of its own: ${JSON.stringify(sample.groups.map((g) => [g.signature, g.count]))}`);
+    assert.ok(cardElement.count >= 6, `the card group has ${cardElement.count} members`);
+    assert.ok(cardElement.examples.some((text) => /先生/.test(text)), `its examples carry no card label: ${JSON.stringify(cardElement.examples)}`);
   });
 
   await check('scroll containers and dialogs are reported', async () => {

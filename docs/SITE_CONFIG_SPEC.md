@@ -32,8 +32,8 @@
 | --- | --- |
 | `tag` | 标签名，小写 |
 | `role` | 可访问角色 |
-| `text` | 三者之一：`equals` / `contains` / `matches`（正则），比对规范化后的可见文本 |
-| `attr` | 数组，每项 `{ name, equals \| contains \| matches }` |
+| `text` | 四者之一：`equals` / `contains` / `token`（整词）/ `matches`（正则），比对规范化后的可见文本 |
+| `attr` | 数组，每项 `{ name, equals \| contains \| token \| matches }`。**类名一律用 `token`**：真实页面上 `contains: "recommend-item"` 会连带匹配所有 BEM 后代（`recommend-item__header` 等），把 20 张卡片变成 80 个 |
 | `href` | 仅链接，取 `href` 属性 |
 | `nth` | 过滤**之后**按下标取一个，0 起 |
 | `within` | 在该定位器命中的元素**内部**再解析 |
