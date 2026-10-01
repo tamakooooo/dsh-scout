@@ -120,8 +120,13 @@ try {
     // Wait until the *progress* shows a send, not merely until the quota moved: the allowance
     // is taken before the action, so polling on it reads the picture in the window between the
     // reserve and the tick, which is a race and not a measurement.
-    const deadline = Date.now() + 15000;
+    // Generous, because the whole suite runs browser suites back to back and the machine is
+    // busy; and the failure names the state it ended in, so a future failure says whether the
+    // progress never moved or the run had already finished before it could be seen.
+    const deadline = Date.now() + 45000;
     while ((task.status.progress?.totals?.sent ?? 0) === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    assert.ok((task.status.progress?.totals?.sent ?? 0) > 0,
+      `nothing was spent while the run was going (state ${task.status.state}, progress ${JSON.stringify(task.status.progress?.totals ?? null)})`);
     const live = task.status;
     assert.ok(live.spend.spent > 0, 'nothing was spent while the run was going');
     assert.ok(['running', 'finished'].includes(live.state));

@@ -28,6 +28,11 @@ window.__ModuleLoader__.load({
       '.jev-stat.warn .v{color:var(--dsw-alias-state-warn-primary)}',
       '.jev-stat.bad .v{color:var(--dsw-alias-state-error-primary)}',
       '.jev-body{flex:1 1 auto;display:flex;min-height:0}',
+      // The chat box: a fixed row at the foot of the panel, under the frame and the panels.
+      '.jev-chat{flex:0 0 auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px;display:flex;flex-direction:column;gap:4px}',
+      '.jev-chat-row{display:flex;gap:6px;align-items:center}',
+      '.jev-chat-input{flex:1 1 auto;min-width:0;padding:6px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:inherit;font:inherit}',
+      '.jev-chat-note{font-size:12px;color:var(--dsw-alias-label-secondary)}',
       '.jev-left{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--dsw-alias-border-l1)}',
       '.jev-right{flex:0 0 340px;display:flex;flex-direction:column;min-height:0}',
       '.jev-frame{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--dsw-alias-bg-base);overflow:hidden}',
@@ -135,6 +140,9 @@ window.__ModuleLoader__.load({
       const [watch, setWatch] = React.useState('');
       const [frame, setFrame] = React.useState({ url: '', at: 0, empty: false });
       const [now, setNow] = React.useState(Date.now());
+      const [chatText, setChatText] = React.useState('');
+      const [chatBusy, setChatBusy] = React.useState(false);
+      const [chatNote, setChatNote] = React.useState('');
 
       // `watch` names the session to look at; empty lets the host half choose one (a session
       // waiting for a decision wins, then `default`).
@@ -205,6 +213,33 @@ window.__ModuleLoader__.load({
           .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); })
           .catch((e) => setError(String(e && e.message ? e.message : e)))
           .then(() => setBusy(false));
+      };
+
+      // Send one message into the conversation. The reply does not come back here — it renders
+      // in the conversation panel, which is where that conversation lives — so the note under
+      // the box says where to look rather than leaving someone waiting on this panel.
+      const sendChat = () => {
+        const text = chatText.trim();
+        if (text === '' || chatBusy) return;
+        setChatBusy(true);
+        setChatNote('');
+        fetch(MOUNT + '/chat', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text }),
+        })
+          .then(async (r) => {
+            if (!r.ok) throw new Error((await r.text()) || ('HTTP ' + r.status));
+            return r.json();
+          })
+          .then((sent) => {
+            setChatText('');
+            setChatNote(sent.accepted
+              ? '已发送到 ' + (sent.session || sent.sessionId || '当前对话')
+              : '已提交，但 Host 没有确认收到');
+          })
+          .catch((e) => setChatNote('发送失败：' + String(e && e.message ? e.message : e)))
+          .then(() => setChatBusy(false));
       };
 
       const decide = (stop, verdict) => {
@@ -356,6 +391,33 @@ window.__ModuleLoader__.load({
               h(Feed, { events, key: 'l' }),
             ]),
           ]),
+        ]),
+        h('div', { className: 'jev-chat', key: 'chat' }, [
+          h('div', { className: 'jev-chat-row', key: 'r' }, [
+            h('input', {
+              key: 'i',
+              className: 'jev-chat-input',
+              value: chatText,
+              disabled: chatBusy,
+              placeholder: '对 AI 说点什么，回车发送…',
+              'aria-label': '给 AI 的消息',
+              onChange: (e) => setChatText(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendChat();
+                }
+              },
+            }),
+            h('button', {
+              key: 'b',
+              className: 'jev-btn primary',
+              disabled: chatBusy || chatText.trim() === '',
+              onClick: sendChat,
+            }, chatBusy ? '发送中…' : '发送'),
+          ]),
+          h('div', { className: 'jev-chat-note', key: 'n' },
+            chatNote || '消息进入当前对话，回复显示在主对话里，不在这里'),
         ]),
       ]);
     }

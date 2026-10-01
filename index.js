@@ -23,6 +23,7 @@ import { Viewer } from './lib/viewer.js';
 import { Journal } from './lib/journal.js';
 import { Records } from './lib/records.js';
 import { Task } from './lib/task.js';
+import { sendChat } from './lib/chat.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
 
@@ -197,6 +198,19 @@ export function apply(ctx, config) {
   const viewer = new Viewer({
     log: (message) => ctx.logger?.debug?.(`[jev-browser] ${message}`),
     ...createMonitor({ sessions, pacing, journal, task }),
+    // The workbench's chat box. The text becomes a prompt in a conversation through the
+    // platform's own session controller — the same call the conversation composer makes — and
+    // the answer renders in that conversation rather than in this panel.
+    chat: async (message) => {
+      const controller = ctx.get?.('sessionController');
+      if (!controller) throw new Error('this Host exposes no session controller, so there is nowhere to send');
+      return sendChat({ sessionController: controller }, {
+        text: typeof message?.text === 'string' ? message.text : '',
+        sessionId: typeof message?.sessionId === 'string' && message.sessionId !== '' ? message.sessionId : undefined,
+        mode: message?.mode === 'steer' ? 'steer' : 'queue',
+        timeZone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; } })(),
+      });
+    },
     // The board's controls. They call the same task the tools call, so a stop from the page
     // and a stop from the conversation are one stop.
     control: async (action, worker, reason) => {
