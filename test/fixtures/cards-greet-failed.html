@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>推荐人才</title><!-- clicking fails: a genuine failure phrase, not the idempotent "already greeted" one -->
+<style>
+  body { margin: 0; font: 14px/1.4 sans-serif; }
+  #list { height: 200px; overflow-y: auto; border: 1px solid #ddd; }
+  li { padding: 8px; border-bottom: 1px solid #eee; }
+  .deep div { padding: 2px; }
+  [role=dialog] { position: fixed; inset: 40px; background: #fff; border: 1px solid #999; }
+</style></head>
+<body>
+  <div class="job-pane" data-role="job-pane"><span class="job-pane__item--active">质量工程师</span></div>
+
+  <!-- The repeating structure a configuration would learn: six sibling cards, each with the
+       same generated class names, so the stable signal is data-* and structure, not class. -->
+  <ul id="list">
+    <li class="km_card__item--a1b2c3d4" data-candidate-id="C-1001"><span class="nm">徐先生</span><span class="ct">广州</span><button class="btn__greet--f9e8d7c6" data-action="greet" onclick="this.textContent='操作失败'">打招呼</button></li>
+    <li class="km_card__item--a1b2c3d4" data-candidate-id="C-1002"><span class="nm">饶先生</span><span class="ct">深圳</span><button class="btn__greet--f9e8d7c6" data-action="greet" onclick="this.textContent='操作失败'">打招呼</button></li>
+    <li class="km_card__item--a1b2c3d4" data-candidate-id="C-1003"><span class="nm">李先生</span><span class="ct">北京</span><button class="btn__greet--f9e8d7c6" data-action="greet" onclick="this.textContent='操作失败'">打招呼</button></li>
+    <li class="km_card__item--a1b2c3d4" data-candidate-id="C-1004"><span class="nm">王先生</span><span class="ct">上海</span><button class="btn__greet--f9e8d7c6" data-action="greet" onclick="this.textContent='操作失败'">打招呼</button></li>
+    <li class="km_card__item--a1b2c3d4" data-candidate-id="C-1005"><span class="nm">陈先生</span><span class="ct">杭州</span><button class="btn__greet--f9e8d7c6" data-action="greet" onclick="this.textContent='操作失败'">打招呼</button></li>
+    <li class="km_card__item--a1b2c3d4" data-candidate-id="C-1006"><span class="nm">张先生</span><span class="ct">成都</span><button class="btn__greet--f9e8d7c6" data-action="greet" onclick="this.textContent='操作失败'">打招呼</button></li>
+  </ul>
+
+  <!-- Deeper than the default depth budget, to prove the cap bites rather than vanishes. -->
+  <div class="deep"><div><div><div><div><div><div><div><div>深层内容</div></div></div></div></div></div></div></div></div>
+
+  <div role="dialog" aria-modal="true"><p>确定要打招呼吗</p><button data-action="confirm">确定</button></div>
+</body></html>
