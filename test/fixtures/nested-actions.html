@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>嵌套按钮（重复目标 vs 链接内的独立动作）</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 0; padding: 16px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; width: 520px; margin-bottom: 12px; }
+  .name { font-weight: 600; margin-bottom: 8px; }
+  .card-link { display: inline-block; margin-top: 10px; color: #06c; text-decoration: none; }
+  button { padding: 6px 10px; margin-right: 6px; }
+  .icon { padding: 0; width: 32px; height: 32px; }
+</style>
+</head>
+<body>
+  <div class="card" id="card-a"><div class="name">赵先生</div><div id="slot-a"></div></div>
+  <div class="card" id="card-b"><div class="name">钱先生</div><div id="slot-b"></div></div>
+
+  <script>
+    // Built in script, not markup, and that is the whole point: `<button>` inside
+    // `<button>` is invalid HTML, so the *parser* silently closes the outer button on
+    // encountering the inner one and they end up siblings. Only a DOM built by script
+    // can hold this nesting — which is exactly how the real console produces it
+    // (`resume-btn-small` wrapping `resume-btn-small__icon`), and exactly why a
+    // markup-only fixture would fail to reproduce the bug it is meant to guard.
+    const outer = document.createElement('button');
+    outer.className = 'action';
+    outer.id = 'outer-action';
+    outer.textContent = '打招呼';
+    const ripple = document.createElement('span');
+    ripple.className = 'ripple';
+    const dup = document.createElement('button');
+    dup.className = 'icon';
+    dup.id = 'nested-dup';
+    ripple.appendChild(dup);
+    outer.appendChild(ripple);
+    document.getElementById('slot-a').appendChild(outer);
+
+    // The opposite shape, which must survive: a link wrapping its own action. `button`
+    // inside `a` is legal, so the parser keeps it either way.
+    const link = document.createElement('a');
+    link.className = 'card-link';
+    link.href = '/candidate/1';
+    link.id = 'card-link';
+    link.textContent = '查看详情';
+    const inner = document.createElement('button');
+    inner.id = 'link-action';
+    inner.textContent = '收藏';
+    link.appendChild(inner);
+    document.getElementById('slot-b').appendChild(link);
+  </script>
+</body>
+</html>

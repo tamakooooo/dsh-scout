@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Jev Browser",
+    "description": "Drive a real Chrome over CDP, with TypeSafe Jev (System One) deciding each step from a bounded action space."
+  }
+}

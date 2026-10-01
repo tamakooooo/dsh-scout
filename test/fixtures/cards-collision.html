@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>同名候选人（姓名冲突与无信号按钮）</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 0; padding: 16px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 12px; width: 560px; }
+  .meta { color: #666; }
+  .resume-action__inner { display: flex; gap: 8px; align-items: center; }
+  button { padding: 6px 12px; }
+  svg { width: 16px; height: 16px; }
+</style>
+</head>
+<body>
+  <!--
+    Two cases the earlier fixtures could not reach:
+      1. two candidates share a surname, so a name alone is not a unique handle;
+      2. each card carries TWO icon buttons with no text, no accessible name and no
+         sprite, so even name + age leaves them identical.
+    The first needs the record's age; the second needs document order and nothing more.
+  -->
+
+  <div class="card">
+    <div class="recommend-item__inner-content">
+      <div class="talent-basic-info__name--inner is-mr-8">王先生</div>
+      <div class="meta">42岁 · 18年 · 本科 · 在职-正在找工作</div>
+      <div class="resume-action__inner">
+        <button class="calling">打电话</button>
+        <button class="large-screen-btn">打招呼</button>
+        <button class="toolbar-slot"><svg></svg></button>
+        <button class="toolbar-slot"><svg></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="recommend-item__inner-content">
+      <div class="talent-basic-info__name--inner is-mr-8">王先生</div>
+      <div class="meta">37岁 · 10年 · 本科 · 在职-看看机会</div>
+      <div class="resume-action__inner">
+        <button class="calling">打电话</button>
+        <button class="large-screen-btn">打招呼</button>
+        <button class="toolbar-slot"><svg></svg></button>
+        <button class="toolbar-slot"><svg></svg></button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

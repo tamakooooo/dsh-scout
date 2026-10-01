@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>候选人卡片（真实嵌套结构）</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 0; padding: 16px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 12px; width: 560px; }
+  .meta { color: #666; }
+  .resume-action__inner { display: flex; gap: 8px; align-items: center; }
+  button { padding: 6px 12px; }
+  svg { width: 16px; height: 16px; }
+</style>
+</head>
+<body>
+  <!--
+    Modelled on the real employer console this plugin was verified against:
+    - the name is nested inside several wrappers, and several elements match a
+      name-ish selector (title, name, name--inner), so "exactly one name" never fires;
+    - the greeting button sits three wrappers deeper than the phone button, so a
+      shallow ancestor walk finds the name for one and not the other;
+    - a radio group carries a generated `name` that is not a label;
+    - an icon-only button carries no text, no aria-label and no sprite.
+  -->
+
+  <div class="card">
+    <div class="recommend-item__inner-content">
+      <div class="talent-basic-info__title">梁先生 1小时前有回复 同事聊过</div>
+      <div class="talent-basic-info__name">梁先生 1小时前有回复 同事聊过</div>
+      <div class="talent-basic-info__name--inner is-mr-8">梁先生</div>
+      <div class="meta">42岁 · 18年 · 本科 · 在职-正在找工作</div>
+      <div class="resume-action recommend-resume-action">
+        <div class="resume-action__inner">
+          <button class="calling">打电话</button>
+          <div class="is-width-100">
+            <div class="resume-button">
+              <div class="cv-test-recommend-chat is-ml-12">
+                <button class="large-screen-btn km-button km-control km-ripple-off km-button--primary">打招呼</button>
+              </div>
+            </div>
+          </div>
+          <button class="toolbar-slot"><svg></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="recommend-item__inner-content">
+      <div class="talent-basic-info__title">王先生 12小时前浏览过职位</div>
+      <div class="talent-basic-info__name">王先生 12小时前浏览过职位</div>
+      <div class="talent-basic-info__name--inner is-mr-8">王先生</div>
+      <div class="meta">37岁 · 10年 · 本科 · 在职-看看机会</div>
+      <div class="resume-action recommend-resume-action">
+        <div class="resume-action__inner">
+          <button class="calling">打电话</button>
+          <div class="is-width-100">
+            <div class="resume-button">
+              <div class="cv-test-recommend-chat is-ml-12">
+                <button class="large-screen-btn km-button km-control km-ripple-off km-button--primary">打招呼</button>
+              </div>
+            </div>
+          </div>
+          <button class="toolbar-slot"><svg></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="selector">
+    <input type="radio" name="rg-04khvrdsa" id="r1">
+    <input type="radio" name="rg-04khvrdsa" id="r2">
+  </div>
+</body>
+</html>

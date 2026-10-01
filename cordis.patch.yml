@@ -1,0 +1,126 @@
+# Jev Browser bundle: two patch entries.
+#
+#   1. the profile-wide Host plugin row that registers the browser_* tools;
+#   2. a "招聘工作台" agent preset that carries its own copies of the tools it needs.
+#
+# Every field under a `config:` is consumed by that plugin's own `apply(ctx, config)`.
+# The browser plugin deliberately exports no `Config` schema, so its config object passes
+# through unvalidated and the plugin applies its own defaults for anything omitted. A
+# later patch layer (the profile's cordis.patch.yml) can override any single field by
+# targeting the row id.
+- insert:
+    - id: jev-browser
+      name: '@local/dsh-jev-browser'
+      config:
+        apiKeyEnv: COMMANDCODE_API_KEY
+        baseUrl: https://api.commandcode.ai/provider/v1
+        model: typesafe/jev
+
+        # The project's own browser profile — the thing that makes logins and cookies
+        # survive a relaunch, a plugin reload, and a Host restart. An empty string goes
+        # back to a throwaway profile that is deleted on close.
+        profileDir: ~/.dsh/jev-browser-profile
+
+        # Plugin disposal detaches instead of killing, so a reload cannot end the
+        # browser the user is logged into. `false` restores tear-everything-down.
+        keepBrowserOnUnload: true
+
+        # A managed Chrome for Testing build, once installed with
+        # browser_open({install_browser: true}), is preferred over the machine's own
+        # Chrome. Empty means $DSH_HOME/runtimes/jev-browser.
+        managedBrowserDir: ''
+
+        headless: false
+        maxSteps: 8
+        maxElements: 60
+        maxStateChars: 6000
+        confidenceFloor: 0.5
+
+        # Pacing and guardrails. A site's risk control measures behaviour, not which
+        # browser binary is running, so this is where the account is actually protected:
+        # a randomized delay between actions, a bounded number of state-changing actions
+        # per session, a forced cooldown every N of them, an immediate stop on any
+        # verification or rate-limit page, and a stop-and-ask gate in front of targets
+        # whose own label looks consequential (打招呼 / 发送 / 投递 / 支付 / 删除 …).
+        minActionDelayMs: 3000
+        maxActionDelayMs: 9000
+        maxActionsPerSession: 20
+        cooldownEveryActions: 8
+        cooldownMs: 45000
+        stopOnRiskPage: true
+        requireConfirmation: true
+
+# ── Work mode: 招聘工作台 ───────────────────────────────────────────────────────
+#
+# A preset is a self-contained agent composition, so this mode carries the tools it needs
+# rather than inheriting them. That is also how it gets its own pacing: a preset-scoped
+# registration shadows the profile-wide one, so inside this mode the browser tools run
+# slower and with a smaller budget than everywhere else. Switching a session to this
+# preset changes the agent's instructions and its limits together, and touches no other
+# session.
+#
+# It does NOT create a second browser. Both instances resolve the same `profileDir` and
+# the same launched-browser registry, so this mode reattaches to the browser the user is
+# already signed into.
+#
+# If you would rather the browser tools existed ONLY in this mode — which is what you want
+# if you dislike five tool schemas in every other session's request — set
+# `disabled: true` on the `jev-browser` row above.
+- insert:
+    - id: preset-recruiting
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: recruiting
+        name: 招聘工作台
+        description: 用 Jev 驱动的浏览器工具做招聘工作，带拟人节奏、风控停手与关键动作确认。
+        order: 5
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              includeRuntimeContext: true
+              prefix: |
+                你是一个招聘工作台。浏览器工具驱动的是一台真实 Chrome，已经登录招聘平台的企业端；决策层是 TypeSafe Jev，它给出校准过的概率，从不生成文本。
+
+                工作规则：
+                - 动手前先确认。目标标签看起来有真实后果的步骤（打招呼、打电话、发送、投递……）会以 `needs_confirmation` 停下来。读它的 note，把「要动哪个候选人、执行什么动作」明确告诉用户，得到同意后再用 `confirm: true` 重跑同一目标。不要替用户默认同意。
+                - 先筛后动。用 browser_snapshot 或 browser_jev 把候选人读成事实，再对照职位的明确要求说明匹配理由；不要凭姓氏或年龄的印象下结论。
+                - 绝不绕过风控。运行报告 `risk_page_detected` 时立刻交还给人工处理，不要尝试任何绕过验证的手段。
+                - 留意额度。运行报告里的 `pacing` 会告诉你这个会话还剩多少次改变状态的动作。
+                - 诚实汇报。引用页面实际显示的内容；跑到步数上限就直说，不要暗示目标已完成。
+          - id: jev-browser
+            name: '@local/dsh-jev-browser'
+            config:
+              apiKeyEnv: COMMANDCODE_API_KEY
+              baseUrl: https://api.commandcode.ai/provider/v1
+              model: typesafe/jev
+              profileDir: ~/.dsh/jev-browser-profile
+              keepBrowserOnUnload: true
+              headless: false
+              maxSteps: 10
+              maxElements: 60
+              maxStateChars: 6000
+              # Higher than the profile default: in recruiting, a wrong pick messages a
+              # real person, so an unsure step should hand back rather than act.
+              confidenceFloor: 0.7
+              # Tighter than the profile defaults on purpose.
+              minActionDelayMs: 5000
+              maxActionDelayMs: 15000
+              maxActionsPerSession: 12
+              cooldownEveryActions: 5
+              cooldownMs: 90000
+              stopOnRiskPage: true
+              requireConfirmation: true
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000

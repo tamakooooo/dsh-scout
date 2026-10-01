@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>候选人卡片 mock</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 0; padding: 16px; }
+  nav { display: flex; gap: 16px; margin-bottom: 16px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 12px; width: 520px; }
+  .candidate-name { font-weight: 600; font-size: 16px; }
+  .meta { color: #666; margin: 4px 0 10px; }
+  .actions { display: flex; gap: 8px; }
+  button { padding: 6px 12px; }
+  svg { width: 16px; height: 16px; }
+</style>
+</head>
+<body>
+  <svg style="display:none">
+    <symbol id="icon-phone"><circle cx="8" cy="8" r="8"/></symbol>
+    <symbol id="icon-wechat"><rect width="16" height="16"/></symbol>
+  </svg>
+
+  <nav>
+    <a href="#jobs">职位</a>
+    <a href="#recommend">推荐</a>
+    <a href="#search">搜索</a>
+    <a href="#chat">聊天</a>
+  </nav>
+
+  <div class="card" id="card-1">
+    <span class="candidate-name">徐先生</span>
+    <div class="meta">31岁 · 9年 · 本科-非统招 · 汽车质量工程师</div>
+    <div class="actions">
+      <button class="btn-call">打电话</button>
+      <button class="icon-btn"><svg><use href="#icon-phone"></use></svg></button>
+      <button class="btn-greet">打招呼</button>
+      <button class="icon-btn" aria-label="收藏"><svg></svg></button>
+      <button class="icon-btn"><svg></svg></button>
+    </div>
+  </div>
+
+  <div class="card" id="card-2">
+    <span class="candidate-name">周先生</span>
+    <div class="meta">32岁 · 9年 · 本科 · 质量管理/测试</div>
+    <div class="actions">
+      <button class="btn-call">打电话</button>
+      <button class="icon-btn"><svg><use href="#icon-phone"></use></svg></button>
+      <button class="btn-greet">打招呼</button>
+      <button class="icon-btn" aria-label="收藏"><svg></svg></button>
+      <button class="icon-btn"><svg></svg></button>
+    </div>
+  </div>
+
+  <div class="card" id="card-3">
+    <span class="candidate-name">詹先生</span>
+    <div class="meta">31岁 · 7年 · 本科 · 离职-正在找工作</div>
+    <div class="actions">
+      <button class="btn-call">打电话</button>
+      <button class="icon-btn"><svg><use href="#icon-wechat"></use></svg></button>
+      <button class="btn-greet">打招呼</button>
+      <button class="icon-btn" aria-label="收藏"><svg></svg></button>
+      <button class="icon-btn"><svg></svg></button>
+    </div>
+  </div>
+</body>
+</html>

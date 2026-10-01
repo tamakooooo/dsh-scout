@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>状态标记（选中态与遮挡）</title>
+<style>
+  body { font: 14px/1.6 system-ui, sans-serif; margin: 0; padding: 16px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  /* The active tab is a div with no interactive role — the case a per-element marker
+     cannot reach, because it never enters the element list at all. */
+  .job-pane__item { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; }
+  .job-pane__item--active { background: #e8f0fe; border-color: #1a73e8; font-weight: 600; }
+  /* A carousel frame is also `--active`, and must NOT be reported as a choice. */
+  .km-carousel__item-wrapper--active { color: #999; margin-bottom: 12px; }
+  .card { position: relative; border: 1px solid #ddd; border-radius: 8px; padding: 12px; width: 380px; margin-bottom: 10px; }
+  /* Covering is pinned to the card instead of guessed with coordinates: an absolute box
+     positioned by hand landed on the *second* card and made the fixture assert the
+     opposite of what it was written to assert. */
+  /* `display` has to be restated here. The base rule below sets `display: none`, and a
+     more specific selector only wins for the properties it actually declares — omitting
+     it left the overlay hidden, so nothing was covered and the fixture asserted nothing. */
+  .card.veiled .overlay { display: block; position: absolute; inset: 0; background: rgba(255,255,255,.97);
+                          border: 1px solid #333; border-radius: 8px; padding: 8px; z-index: 10; }
+  .card .overlay { display: none; }
+  button { padding: 6px 12px; }
+</style>
+</head>
+<body>
+  <div class="tabs">
+    <div class="job-pane__item job-pane__item--active" id="job-active">质量工程师</div>
+    <div class="job-pane__item" id="job-other">测试工程师</div>
+  </div>
+
+  <div class="km-carousel__item-wrapper--active" id="carousel">今日推荐人才剩：聊天 500 次</div>
+
+  <!-- Covered: visible, sized, opaque — and unreachable. -->
+  <div class="card veiled" id="card-covered">
+    <div class="name">赵先生</div>
+    <button id="covered-action">打招呼</button>
+    <div class="overlay" id="overlay">浮层：盖住这张卡片</div>
+  </div>
+
+  <!-- Free: reachable. -->
+  <div class="card" id="card-free">
+    <div class="name">钱先生</div>
+    <button id="free-action">打招呼</button>
+  </div>
+</body>
+</html>
