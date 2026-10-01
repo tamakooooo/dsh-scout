@@ -100,9 +100,10 @@
 
 ## 5. 动作类型枚举
 
-`read | click | type | select | scroll | wait`
+`read | click | type | scroll | wait`
 
 - `read`：无副作用，任意位置可用。
+- **没有 `select`**：执行器没有它的语义。词汇表里写一个没人实现的动作，等于邀请配置声明一个悄悄什么也不做的步骤；等执行器支持时再加回来。
 - `click / type / select`：配置里**必须声明** `effect: "none" | "navigation" | "quota"`。
 
 **但声明只允许升级，不允许降级。** 配置说「无副作用」不能让它绕过闸门 —— 那等于让 agent 自己批改自己的作业。插件按**可观测事实**判定后果：

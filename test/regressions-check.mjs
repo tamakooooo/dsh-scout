@@ -571,10 +571,29 @@ try {
     await sessions.page('default');
     assert.equal(session.pages.get(targetId).sessionId, null);
     await session.cdp.send('Target.closeTarget', { targetId: active });
-    ({ session } = await sessions.page('default'));
-    assert.equal(session.targetId, targetId);
+    // Adoption happens on the next reconcile, and the browser may take a moment to settle after
+    // a tab disappears. Waiting for it under a deadline keeps the assertion — a *wrong* target
+    // is still wrong — while removing the assumption that it happens within one call. This was
+    // flaky once in a full-suite run and never reproduced alone; the assumption was the only
+    // thing that could have made it so.
+    const settle = async (predicate, timeoutMs = 8000) => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        ({ session } = await sessions.page('default'));
+        if (await predicate()) return true;
+        if (Date.now() >= deadline) return false;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    };
+    const adopted = await settle(() => session.targetId === targetId && typeof session.sessionId === 'string');
+    assert.equal(
+      session.targetId,
+      targetId,
+      `the session adopted ${session.targetId} instead of the unselected popup ${targetId} after ${adopted ? 0 : 8000}ms`,
+    );
     assert.equal(typeof session.sessionId, 'string');
     await waitForReady(session.cdp, session.sessionId);
+    await settle(async () => (await snapshot(session.cdp, session.sessionId)).title === 'Popup');
     assert.equal((await snapshot(session.cdp, session.sessionId)).title, 'Popup');
   });
 

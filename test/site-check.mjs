@@ -17,8 +17,8 @@ import { join } from 'node:path';
 
 const { resolveConfig } = await import('../index.js');
 const { Sessions } = await import('../lib/sessions.js');
-const { navigate } = await import('../lib/page.js');
-const { validateConfig, check, readCandidates, configFileName, loadConfig, saveConfig, USABLE_HIT_RATE } = await import('../lib/site.js');
+const { navigate, perform, evaluate } = await import('../lib/page.js');
+const { validateConfig, check, readCandidates, resolveTarget, configFileName, loadConfig, saveConfig, USABLE_HIT_RATE, ACTION_TYPES } = await import('../lib/site.js');
 const { localDir } = await import('../lib/local.js');
 
 let failures = 0;
@@ -195,6 +195,65 @@ try {
     const read = await readCandidates(session.cdp, session.sessionId, { config });
     assert.equal(read.count, 0, 'records were read from a page the rules do not describe');
     assert.equal(read.verdict, 'stale');
+  });
+
+  await verify('the action vocabulary names only what the executor implements', async () => {
+    // `select` is absent on purpose: naming an action nothing implements invites a
+    // configuration to declare a step that quietly does nothing.
+    assert.deepEqual(ACTION_TYPES, ['read', 'click', 'type', 'scroll', 'wait']);
+  });
+
+  await verify('a target resolves to exactly one element and is stamped for the action path', async () => {
+    const target = await resolveTarget(session.cdp, session.sessionId, { config: good, identity: 'C-1002', action: 'greet' });
+    assert.equal(target.ok, true, `${target.code}: ${target.message}`);
+    assert.equal(target.ref, 'cfg-1');
+    assert.equal(target.label, '打招呼');
+  });
+
+  await verify('the resolved target really is actionable', async () => {
+    // The point of the stamp: the existing action path acts through it, so pointer and typing
+    // semantics live in one place rather than drifting between two implementations.
+    const target = await resolveTarget(session.cdp, session.sessionId, { config: good, identity: 'C-1002', action: 'greet' });
+    const outcome = await perform(session.cdp, session.sessionId, 'click', target.ref);
+    assert.equal(outcome.ok, true, outcome.message);
+    const text = await evaluate(session.cdp, session.sessionId,
+      'document.querySelector("[data-candidate-id=\'C-1002\'] button").textContent');
+    assert.equal(text, '已打招呼', 'the click did not reach the card the configuration named');
+  });
+
+  await verify('every refusal names its cause', async () => {
+    const cases = [
+      [{ identity: 'C-nope', action: 'greet' }, 'identity_not_found'],
+      [{ identity: 'C-1001', action: 'nope' }, 'no_such_action'],
+      [{ identity: 'C-1001', action: 'peer' }, 'read_only'],
+      [{ identity: '', action: 'greet' }, 'no_identity'],
+    ];
+    for (const [selection, code] of cases) {
+      // `peer` is declared as a read-only action, so resolving it as a target must refuse.
+      const config = JSON.parse(JSON.stringify(good));
+      config.actions.peer = { scope: 'card', type: 'read', locator: { tag: 'span' } };
+      const target = await resolveTarget(session.cdp, session.sessionId, { config, ...selection });
+      assert.equal(target.ok, false, `${JSON.stringify(selection)} resolved`);
+      assert.equal(target.code, code, `expected ${code}, got ${target.code}: ${target.message}`);
+    }
+  });
+
+  await verify('an action that matches more than one element is refused, not guessed', async () => {
+    const config = JSON.parse(JSON.stringify(good));
+    config.actions.readEverything = { scope: 'card', type: 'click', locator: { tag: 'span' } };
+    const target = await resolveTarget(session.cdp, session.sessionId, { config, identity: 'C-1001', action: 'readEverything' });
+    assert.equal(target.ok, false);
+    assert.equal(target.code, 'target_ambiguous');
+    assert.match(target.message, /refusing to guess/);
+  });
+
+  await verify('two cards claiming one identity are refused', async () => {
+    const config = JSON.parse(JSON.stringify(good));
+    config.cards.identity = { from: 'text' };
+    const target = await resolveTarget(session.cdp, session.sessionId, { config, identity: '徐先生 广州 打招呼', action: 'greet' });
+    // The whole card's text is the identity here, so more than one card can claim it only if
+    // the page really repeats one; either way the resolver must not act on a guess.
+    assert.ok(target.code === 'identity_ambiguous' || target.code === 'identity_not_found', `got ${target.code}`);
   });
 
   await verify('a saved configuration round-trips through the local root', async () => {
