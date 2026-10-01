@@ -158,6 +158,17 @@ try {
     assert.ok(viewerUrl, 'the viewer did not listen, so the board has nothing to read');
     const state = await (await fetch(new URL('state.json', viewerUrl))).json();
     assert.ok(state.task, 'state.json carries no task');
+    // Four platforms, each with its own count: the page must never show one total for four pools.
+    assert.equal(state.platforms.length, 4, JSON.stringify(state.platforms));
+    assert.deepEqual(state.platforms.map((row) => row.id), ['zhaopin', 'zhipin', '51job', 'liepin']);
+    assert.deepEqual(state.platforms.map((row) => row.name), ['智联招聘', 'BOSS直聘', '前程无忧', '猎聘']);
+    for (const row of state.platforms) {
+      assert.equal(typeof row.contacts, 'number', `${row.id} has no contact count`);
+      // A run belongs to one platform. Its state may only appear on that one, and every other
+      // platform must read idle rather than borrowing it.
+      if (row.id !== 'zhaopin') assert.equal(row.state, 'idle', `${row.id} borrowed another platform's run state`);
+    }
+    assert.ok(state.platforms.find((row) => row.id === 'zhaopin').contacts > 0, 'the contacts recorded for 智联 are missing');
     assert.equal(state.task.windows.length, 2, JSON.stringify(state.task.windows));
     assert.equal(state.task.spend.limit, 6);
     assert.ok(state.task.startedAt, 'the board cannot say when the run began');

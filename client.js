@@ -42,6 +42,11 @@ window.__ModuleLoader__.load({
       '.jev-msg-text{font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}',
       '.jev-detail{flex:0 0 auto;max-height:46%;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px}',
       '.jev-chat-input{resize:none;font:inherit}',
+      // One chip per platform. Four pools, four counts; the live one is marked, never assumed.
+      '.jev-platforms{display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1);overflow-x:auto;flex:0 0 auto}',
+      '.jev-platform{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);font-size:12px;white-space:nowrap;color:var(--dsw-alias-label-secondary)}',
+      '.jev-platform.live{border-color:var(--dsw-alias-state-success-primary);color:var(--dsw-alias-label-primary)}',
+      '.jev-platform .n{font-variant-numeric:tabular-nums}',
       '.jev-chat-input{flex:1 1 auto;min-width:0;padding:6px 8px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:inherit;font:inherit}',
       '.jev-chat-note{font-size:12px;color:var(--dsw-alias-label-secondary)}',
       '.jev-left{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--dsw-alias-border-l1)}',
@@ -235,6 +240,9 @@ window.__ModuleLoader__.load({
       const events = (state && state.events) || [];
       const sessions = (state && state.sessions) || [];
       const task = (state && state.task) || null;
+      // The four platforms, each with its own count. Empty until the first state arrives, and
+      // empty is shown as nothing rather than as four zeroes.
+      const platforms = (state && state.platforms) || [];
       const tabs = (state && state.tabs) || [];
       // One stop per session: with several sessions working, several can be waiting at once,
       // and each one has its own decision id — so every stop is rendered and answered
@@ -312,6 +320,21 @@ window.__ModuleLoader__.load({
           h('button', { key: 'd', className: 'jev-btn', onClick: () => setShowDetail((v) => !v) },
             showDetail ? '收起详情' : '详情'),
         ]),
+
+        // Which platform is on screen, and what each one has on file. A run belongs to one of
+        // them, so a total here would be a number about four different things.
+        platforms.length
+          ? h('div', { className: 'jev-platforms', key: 'platforms' }, platforms.map((p) => h('span', {
+              key: p.id,
+              className: 'jev-platform' + (p.live ? ' live' : ''),
+              title: p.live ? '浏览器当前就在这个平台' : (p.contacts > 0 ? p.contacts + ' 条联系记录' : '还没有记录'),
+            }, [
+              p.live ? h('span', { key: 'd' }, '●') : null,
+              h('span', { key: 'n' }, p.name),
+              h('span', { className: 'n', key: 'c' }, String(p.contacts ?? 0)),
+              p.state && p.state !== 'idle' ? h('span', { key: 's' }, ' ' + p.state) : null,
+            ])))
+          : null,
 
         // The only things that cannot proceed without a person, on one line each, above the
         // conversation. Everything else moved behind the detail toggle, but these would be a

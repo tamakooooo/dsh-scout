@@ -24,6 +24,7 @@ import { Journal } from './lib/journal.js';
 import { Records } from './lib/records.js';
 import { Task } from './lib/task.js';
 import { sendChat, followTranscript } from './lib/chat.js';
+import { PLATFORMS, platformOf } from './lib/platforms.js';
 import { normalizeFrame, describeEvent } from './lib/transcript.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
@@ -204,7 +205,34 @@ export function apply(ctx, config) {
 
   const viewer = new Viewer({
     log: (message) => ctx.logger?.debug?.(`[jev-browser] ${message}`),
-    ...createMonitor({ sessions, pacing, journal, task }),
+    ...createMonitor({
+      sessions, pacing, journal, task,
+      // Each platform's own row: whether the page on screen is on it, how many contacts it has
+      // on file, and what the run is doing there. Counted per platform rather than summed, because
+      // a total across four pools answers a question nobody asked.
+      platforms: async (session) => {
+        const live = platformOf(session?.lastUrl || '');
+        const status = task.status;
+        const rows = [];
+        for (const platform of PLATFORMS) {
+          let contacts = 0;
+          try {
+            contacts = (await recordsFor(platform.id).readAll()).length;
+          } catch {
+            contacts = 0;
+          }
+          rows.push({
+            id: platform.id,
+            name: platform.name,
+            live: live?.id === platform.id,
+            url: live?.id === platform.id ? (session?.lastUrl || '') : '',
+            contacts,
+            state: status.platform === platform.id ? status.state : 'idle',
+          });
+        }
+        return rows;
+      },
+    }),
     // The workbench's chat box. The text becomes a prompt in a conversation through the
     // platform's own session controller — the same call the conversation composer makes — and
     // the answer renders in that conversation rather than in this panel.
