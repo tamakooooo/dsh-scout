@@ -12,7 +12,7 @@
 import './isolate.mjs';
 import assert from 'node:assert/strict';
 
-const { textOf, normalizeFrame, messagesOf, appendMessage, describeEvent, isKnownQuiet } = await import('../lib/transcript.js');
+const { textOf, partsOf, toolResultOf, normalizeFrame, messagesOf, appendMessage, describeEvent, isKnownQuiet } = await import('../lib/transcript.js');
 
 let failures = 0;
 async function verify(name, run) {
@@ -117,6 +117,55 @@ await verify('frames that are not messages produce no message', async () => {
   ]) {
     assert.equal(normalizeFrame(frame), null, `produced a message from ${JSON.stringify(frame)}`);
   }
+});
+
+await verify('a message carries its reasoning and tool calls, in order', async () => {
+  // The platform's ContentBlockMap: text, reasoning, tool-call, and blocks this panel does not
+  // render. Reading only `text` is what made this a thinner copy of the conversation.
+  const message = {
+    content: [
+      { type: 'reasoning', text: '先看页面结构。' },
+      { type: 'tool-call', id: 'call-1', name: 'browser_inspect', arguments: '{"depth":8}' },
+      { type: 'text', text: '我看了一下。' },
+      { type: 'image', attachment: { id: 'a' } },
+    ],
+  };
+  assert.deepEqual(partsOf(message), [
+    { kind: 'reasoning', text: '先看页面结构。' },
+    { kind: 'tool', id: 'call-1', name: 'browser_inspect', input: '{"depth":8}' },
+    { kind: 'text', text: '我看了一下。' },
+  ]);
+  // An unknown block contributes nothing rather than an empty row.
+  assert.deepEqual(partsOf({ content: [{ type: 'image' }, { type: 'file' }] }), []);
+  // And a message with only reasoning and a tool call is still a message: there is no prose to
+  // gate it on, and the conversation shows those parts without any.
+  const frame = {
+    type: 'assistant/message', seq: 5, time: 5,
+    data: { turn: 1, step: 1, message: { id: 'a', role: 'assistant', content: [{ type: 'reasoning', text: '想' }] } },
+  };
+  const normalized = normalizeFrame(frame);
+  assert.equal(normalized.text, '');
+  assert.equal(normalized.parts.length, 1);
+});
+
+await verify('a tool result is a row, matched by its call id', async () => {
+  const frame = {
+    type: 'tool/result', seq: 7, time: 7,
+    data: { turn: 1, step: 1, callId: 'call-1', message: { role: 'tool', toolCallId: 'call-1', content: [{ type: 'text', text: '  找到了   20 张卡  ' }] } },
+  };
+  const result = toolResultOf(frame);
+  assert.equal(result.callId, 'call-1');
+  // Whitespace is collapsed: a row is one line, not a block of its own.
+  assert.equal(result.text, '找到了 20 张卡');
+  assert.equal(result.error, false);
+  // A history record wrapping the event reads the same.
+  assert.deepEqual(toolResultOf({ type: 'event', event: frame }), result);
+  // An error is named.
+  const failed = { type: 'tool/result', seq: 8, data: { callId: 'c2', error: { name: 'ToolError' }, message: { content: [] } } };
+  assert.equal(toolResultOf(failed).error, true);
+  // Anything else is not a tool result.
+  assert.equal(toolResultOf({ type: 'user/message', seq: 1, data: {} }), null);
+  assert.equal(toolResultOf(null), null);
 });
 
 await verify('a message repeated by a reconnect is not shown twice', async () => {

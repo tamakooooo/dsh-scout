@@ -26,7 +26,7 @@ import { Task } from './lib/task.js';
 import { sendChat, followTranscript, assertSendableText } from './lib/chat.js';
 import { PLATFORMS, platformOf } from './lib/platforms.js';
 import { workbenchAgent, registerWorkbenchPreset } from './lib/workbench-agent.js';
-import { messagesOf, describeEvent, isKnownQuiet } from './lib/transcript.js';
+import { messagesOf, describeEvent, isKnownQuiet, toolResultOf } from './lib/transcript.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
 
@@ -269,6 +269,13 @@ export function apply(ctx, config) {
           const messages = messagesOf(frame);
           if (messages.length > 0) {
             for (const message of messages) sendFrame({ kind: 'message', message });
+            return;
+          }
+          // A tool result is its own event, not part of the message: the conversation shows it as
+          // a row of its own and so does this.
+          const tool = toolResultOf(frame);
+          if (tool) {
+            sendFrame({ kind: 'tool', tool });
             return;
           }
           const status = describeEvent(frame);

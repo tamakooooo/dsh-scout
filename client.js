@@ -55,6 +55,13 @@ window.__ModuleLoader__.load({
       '.jev-md-quote{margin:4px 0;padding-left:8px;border-left:2px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}',
       '.jev-md-hr{border:0;border-top:1px solid var(--dsw-alias-border-l1);margin:6px 0}',
       '.jev-md-link{color:inherit;text-decoration:underline}',
+      '.jev-md-reasoning{border-left:2px solid var(--dsw-alias-border-l1);padding-left:8px;margin:4px 0;color:var(--dsw-alias-label-secondary)}',
+      '.jev-md-reasoning-label{font-size:11px;opacity:.8}',
+      '.jev-md-reasoning-text{font-size:12px;max-height:96px;overflow-y:auto;white-space:pre-wrap}',
+      '.jev-toolrow{display:flex;gap:6px;align-items:baseline;font-size:12px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-radius:6px;padding:4px 8px;margin:4px 0;max-width:86%;align-self:flex-start}',
+      '.jev-toolrow.bad{color:var(--dsw-alias-state-error-primary)}',
+      '.jev-toolname{flex:0 0 auto;font-weight:600}',
+      '.jev-tooldetail{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.jev-detail{flex:0 0 auto;max-height:46%;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px}',
       '.jev-chat-input{resize:none;font:inherit}',
       // The chat panel lives in the right sidebar now, so it brings its own full-height column.
@@ -208,7 +215,11 @@ window.__ModuleLoader__.load({
           if (frame.kind === 'message') {
             setLog((previous) => (previous.some((m) => m.id === frame.message.id)
               ? previous
-              : previous.concat([frame.message]).slice(-200)));
+              : previous.concat([{ kind: 'message', ...frame.message }]).slice(-300)));
+          } else if (frame.kind === 'tool') {
+            setLog((previous) => (previous.some((m) => m.id === frame.tool.id)
+              ? previous
+              : previous.concat([{ kind: 'tool', ...frame.tool }]).slice(-300)));
           } else if (frame.kind === 'status') {
             setStatus(frame.text || '');
           } else if (frame.kind === 'session') {
@@ -265,12 +276,46 @@ window.__ModuleLoader__.load({
           log.length === 0
             ? h('div', { className: 'jev-dim', key: 'e', style: { padding: '12px' } },
                 status || '还没有对话。在下面说点什么，回复会出现在这里。')
-            : log.map((message) => h('div', { className: 'jev-msg ' + message.role, key: message.id }, [
-                h('div', { className: 'jev-msg-role', key: 'r' }, message.role === 'user' ? '我' : 'AI'),
-                message.role === 'assistant'
-                  ? h('div', { className: 'jev-msg-text jev-msg-md', key: 't' }, renderMarkdown(message.text, message.id))
-                  : h('div', { className: 'jev-msg-text', key: 't' }, message.text),
-              ])),
+            : log.map((entry) => {
+                // A tool result is a row, not a bubble: it is something that happened, not
+                // something said, and the conversation draws it that way too.
+                if (entry.kind === 'tool') {
+                  return h('div', { className: 'jev-toolrow' + (entry.error ? ' bad' : ''), key: entry.id }, [
+                    h('span', { className: 'jev-toolname', key: 'n' }, entry.error ? '工具出错' : '工具结果'),
+                    h('span', { className: 'jev-tooldetail', key: 'd' }, entry.text || '(空)'),
+                  ]);
+                }
+                if (entry.role === 'assistant') {
+                  const parts = Array.isArray(entry.parts) && entry.parts.length > 0
+                    ? entry.parts
+                    : [{ kind: 'text', text: entry.text }];
+                  return h('div', { className: 'jev-msg assistant', key: entry.id }, [
+                    h('div', { className: 'jev-msg-role', key: 'r' }, 'AI'),
+                    ...parts.map((part, partIndex) => {
+                      const partKey = entry.id + '-p' + partIndex;
+                      if (part.kind === 'reasoning') {
+                        // Shown, dimmed and clamped, because it is part of the answer's working and
+                        // the conversation shows it too.
+                        return h('div', { className: 'jev-md-reasoning', key: partKey }, [
+                          h('div', { className: 'jev-md-reasoning-label', key: 'l' }, '思考'),
+                          h('div', { className: 'jev-md-reasoning-text', key: 't' }, part.text),
+                        ]);
+                      }
+                      if (part.kind === 'tool') {
+                        return h('div', { className: 'jev-toolrow', key: partKey }, [
+                          h('span', { className: 'jev-toolname', key: 'n' }, part.name),
+                          h('span', { className: 'jev-tooldetail', key: 'd' }, (part.input || '').slice(0, 240)),
+                        ]);
+                      }
+                      return h('div', { className: 'jev-msg-text jev-msg-md', key: partKey }, renderMarkdown(part.text, partKey));
+                    }),
+                  ]);
+                }
+                return h('div', { className: 'jev-msg ' + entry.role, key: entry.id }, [
+                  h('div', { className: 'jev-msg-role', key: 'r' }, entry.role === 'user' ? '我' : 'AI'),
+                  h('div', { className: 'jev-msg-text', key: 't' }, entry.text),
+                ]);
+              }),
         ]),
         status && log.length > 0
           ? h('div', { className: 'jev-chat-note', key: 's', style: { padding: '0 10px 4px' } }, status)
