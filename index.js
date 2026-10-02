@@ -25,7 +25,7 @@ import { Records } from './lib/records.js';
 import { Task } from './lib/task.js';
 import { sendChat, followTranscript } from './lib/chat.js';
 import { PLATFORMS, platformOf } from './lib/platforms.js';
-import { ensureWorkbenchSession } from './lib/workbench-session.js';
+import { workbenchAgent, registerWorkbenchPreset } from './lib/workbench-agent.js';
 import { messagesOf, describeEvent, isKnownQuiet } from './lib/transcript.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
@@ -203,6 +203,12 @@ export function apply(ctx, config) {
   };
   // The run itself: stop, pause, takeover, its windows, and the allowance it spends from.
   const task = new Task({ config: resolved, sessions, recordsFor, pacing });
+  // The workbench assistant is a named agent. Registering the preset is best-effort and reported:
+  // if this Host has no preset registry the assistant still works, it just keeps the name a
+  // session has by default, and that is worth a line rather than a silent difference.
+  void registerWorkbenchPreset(ctx)
+    .then(() => ctx.logger?.debug?.('[jev-browser] registered the workbench agent preset'))
+    .catch((error) => ctx.logger?.debug?.(`[jev-browser] no preset for the workbench assistant: ${error.message}`));
 
   const viewer = new Viewer({
     log: (message) => ctx.logger?.debug?.(`[jev-browser] ${message}`),
@@ -248,9 +254,11 @@ export function apply(ctx, config) {
       // The panel reads the workbench's own conversation, not whichever one was active. That is
       // the point of it: what you say there is about the run in front of you, and it is still
       // there tomorrow.
+      // Resolving the agent is what lets the role be installed on its own context: it needs a
+      // live agent, not just an id.
       const workbench = typeof sessionId === 'string' && sessionId !== ''
         ? sessionId
-        : (await ensureWorkbenchSession({ sessionController: controller }, { signal })).sessionId;
+        : (await workbenchAgent({ sessionController: controller }, { signal })).sessionId;
       await followTranscript({ sessionController: controller }, {
         sessionId: workbench,
         signal,
@@ -290,7 +298,7 @@ export function apply(ctx, config) {
       if (!controller) throw new Error('this Host exposes no session controller, so there is nowhere to send');
       const workbench = typeof message?.sessionId === 'string' && message.sessionId !== ''
         ? message.sessionId
-        : (await ensureWorkbenchSession({ controller, sessionController: controller }, { signal })).sessionId;
+        : (await workbenchAgent({ sessionController: controller }, { signal })).sessionId;
       return sendChat({ sessionController: controller }, {
         text: typeof message?.text === 'string' ? message.text : '',
         sessionId: workbench,

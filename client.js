@@ -243,7 +243,7 @@ window.__ModuleLoader__.load({
         // one session of its own, kept for this workbench, and what you tell it is about the run
         // in front of you.
         h('div', { className: 'jev-chathead', key: 'h' }, [
-          h('span', { className: 'jev-chathead-title', key: 't' }, 'AI 助手 · 专用'),
+          h('span', { className: 'jev-chathead-title', key: 't' }, '招聘工作台助手'),
           h('span', { className: 'jev-dim', key: 's' }, sessionId ? sessionId.slice(0, 12) : '尚未建立'),
         ]),
         h('div', { className: 'jev-chatlist', key: 'l', ref: listRef }, [
