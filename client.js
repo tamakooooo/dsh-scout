@@ -43,6 +43,8 @@ window.__ModuleLoader__.load({
       '.jev-detail{flex:0 0 auto;max-height:46%;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px}',
       '.jev-chat-input{resize:none;font:inherit}',
       // The chat panel lives in the right sidebar now, so it brings its own full-height column.
+      '.jev-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;overflow-y:auto}',
+      '.jev-chatcol{flex:0 0 340px;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--dsw-alias-border-l1)}',
       '.jev-chatpanel{height:100%;display:flex;flex-direction:column;overflow:hidden;font-size:13px;color:var(--dsw-alias-label-primary)}',
       '.jev-chatlist{flex:1 1 auto;min-height:0;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}',
       '.jev-scroll{overflow-y:auto}',
@@ -56,7 +58,7 @@ window.__ModuleLoader__.load({
       '.jev-chat-note{font-size:12px;color:var(--dsw-alias-label-secondary)}',
       '.jev-left{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--dsw-alias-border-l1)}',
       '.jev-right{flex:0 0 340px;display:flex;flex-direction:column;min-height:0}',
-      '.jev-frame{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--dsw-alias-bg-base);overflow:hidden}',
+      '.jev-frame{flex:0 0 auto;height:340px;display:flex;align-items:center;justify-content:center;background:var(--dsw-alias-bg-base);overflow:hidden;border-bottom:1px solid var(--dsw-alias-border-l1)}',
       '.jev-frame img{max-width:100%;max-height:100%;object-fit:contain;display:block}',
       '.jev-meta{padding:6px 16px;border-top:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);font-size:12px;flex:0 0 auto}',
       '.jev-sec{border-bottom:1px solid var(--dsw-alias-border-l1);padding:8px 12px;flex:0 0 auto}',
@@ -380,7 +382,7 @@ window.__ModuleLoader__.load({
         ]),
 
         h('div', { className: 'jev-body', key: 'body' }, [
-          h('div', { className: 'jev-left', key: 'l' }, [
+          h('div', { className: 'jev-main', key: 'l' }, [
             h('div', { className: 'jev-frame', key: 'f' },
               frame.url && !frame.empty
                 ? h('img', { src: frame.url, alt: '浏览器实况' })
@@ -404,9 +406,6 @@ window.__ModuleLoader__.load({
                   )))
                 : null,
             ]),
-          ]),
-
-          h('div', { className: 'jev-right jev-scroll', key: 'r' }, [
             // Which platform is on screen, and what each one has on file. Four pools, four counts.
             platforms.length
               ? h('div', { className: 'jev-sec', key: 'plat' }, [
@@ -521,6 +520,14 @@ window.__ModuleLoader__.load({
               h(Feed, { events, key: 'l' }),
             ]),
           ]),
+
+          // The conversation, in its own column beside the board. It is part of this page rather
+          // than a separate shell panel: the workbench is where the watching and the talking
+          // happen, and switching surfaces to ask a question about what you are looking at is
+          // the wrong shape for it.
+          h('div', { className: 'jev-chatcol', key: 'chat' }, [
+            h(Chat, { key: 'c' }),
+          ]),
         ]),
       ]);
     }
@@ -558,17 +565,7 @@ window.__ModuleLoader__.load({
           { name: 'main', key: ID },
           Page,
         ));
-        // The conversation is a tab of the right sidebar, not a strip at the foot of the board:
-        // watching the browser and talking about it are two things, and the slot it sits on is
-        // session-scoped, so the session on screen is passed in rather than guessed.
-        ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
-          { name: 'sidebar.right.pane.tab', key: ID },
-          Chat,
-        ));
-        ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
-          { name: 'sidebar.right.pane.tab.title', key: ID },
-          function ChatTabTitle() { return h('span', null, '招聘对话'); },
-        ));
+
       },
     };
   },
