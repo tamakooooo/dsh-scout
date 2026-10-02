@@ -40,6 +40,21 @@ window.__ModuleLoader__.load({
       '.jev-msg.assistant{align-self:flex-start}',
       '.jev-msg-role{font-size:11px;color:var(--dsw-alias-label-secondary);margin-bottom:2px}',
       '.jev-msg-text{font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}',
+      '.jev-msg-md{white-space:normal}',
+      '.jev-md-p{margin:0 0 6px}',
+      '.jev-md-p:last-child{margin-bottom:0}',
+      '.jev-md-h{font-weight:600;margin:6px 0 4px}',
+      '.jev-md-h1{font-size:15px}',
+      '.jev-md-h2{font-size:14px}',
+      '.jev-md-h3,.jev-md-h4,.jev-md-h5,.jev-md-h6{font-size:13px}',
+      '.jev-md-pre{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:6px 8px;overflow-x:auto;margin:4px 0;font-size:12px}',
+      '.jev-md-code{background:var(--dsw-alias-bg-base);border-radius:4px;padding:0 3px;font-size:12px}',
+      '.jev-md-list{margin:4px 0;padding-left:18px}',
+      '.jev-md-table{border-collapse:collapse;margin:4px 0;font-size:12px}',
+      '.jev-md-table th,.jev-md-table td{border:1px solid var(--dsw-alias-border-l1);padding:2px 6px;text-align:left}',
+      '.jev-md-quote{margin:4px 0;padding-left:8px;border-left:2px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}',
+      '.jev-md-hr{border:0;border-top:1px solid var(--dsw-alias-border-l1);margin:6px 0}',
+      '.jev-md-link{color:inherit;text-decoration:underline}',
       '.jev-detail{flex:0 0 auto;max-height:46%;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px}',
       '.jev-chat-input{resize:none;font:inherit}',
       // The chat panel lives in the right sidebar now, so it brings its own full-height column.
@@ -252,7 +267,9 @@ window.__ModuleLoader__.load({
                 status || '还没有对话。在下面说点什么，回复会出现在这里。')
             : log.map((message) => h('div', { className: 'jev-msg ' + message.role, key: message.id }, [
                 h('div', { className: 'jev-msg-role', key: 'r' }, message.role === 'user' ? '我' : 'AI'),
-                h('div', { className: 'jev-msg-text', key: 't' }, message.text),
+                message.role === 'assistant'
+                  ? h('div', { className: 'jev-msg-text jev-msg-md', key: 't' }, renderMarkdown(message.text, message.id))
+                  : h('div', { className: 'jev-msg-text', key: 't' }, message.text),
               ])),
         ]),
         status && log.length > 0
@@ -549,6 +566,241 @@ window.__ModuleLoader__.load({
           ]),
         ]),
       ]);
+    }
+
+    // ─── markdown parser: a verbatim copy of lib/markdown.js ─────────────────
+    // The Client half is a separate bundle and cannot import from lib, so the parser is copied.
+    // test/markdown-check.mjs compares this block against the original, so the duplicate is
+    // checked rather than trusted.
+/** Split a table row into cells, trimming the outer pipes. */
+function splitRow(line) {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return trimmed.split('|').map((cell) => cell.trim());
+}
+
+/** Whether a line is a table's separator row: |---|:--:|---| */
+function isTableSeparator(line) {
+  const cells = splitRow(line);
+  if (cells.length === 0) return false;
+  return cells.every((cell) => /^:?-{2,}:?$/.test(cell.replace(/\s+/g, '')));
+}
+
+/**
+ * Parse one message body into blocks.
+ *
+ * @param text - the raw text.
+ * @returns an array of blocks; empty input yields no blocks.
+ */
+function parseMarkdown(text) {
+  const source = typeof text === 'string' ? text : '';
+  if (source.trim() === '') return [];
+  const lines = source.replace(/\r\n?/g, '\n').split('\n');
+  const blocks = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    // Blank lines only separate.
+    if (line.trim() === '') {
+      index += 1;
+      continue;
+    }
+
+    // A fenced code block, to its closing fence or the end.
+    const fence = line.match(/^\s*(```|~~~)\s*([A-Za-z0-9+#._-]*)\s*$/);
+    if (fence) {
+      const marker = fence[1];
+      const lang = fence[2] || '';
+      const body = [];
+      index += 1;
+      while (index < lines.length && !new RegExp(`^\\s*${marker}\\s*$`).test(lines[index])) {
+        body.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      blocks.push({ type: 'code', lang, text: body.join('\n') });
+      continue;
+    }
+
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if (heading) {
+      blocks.push({ type: 'heading', level: heading[1].length, text: heading[2] });
+      index += 1;
+      continue;
+    }
+
+    if (/^\s{0,3}([-*_])\s*(\1\s*){2,}$/.test(line)) {
+      blocks.push({ type: 'rule' });
+      index += 1;
+      continue;
+    }
+
+    // A table: a row with pipes, then a separator row.
+    if (line.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+      const head = splitRow(line);
+      const rows = [];
+      index += 2;
+      while (index < lines.length && lines[index].includes('|') && lines[index].trim() !== '') {
+        rows.push(splitRow(lines[index]));
+        index += 1;
+      }
+      blocks.push({ type: 'table', head, rows });
+      continue;
+    }
+
+    const quote = line.match(/^\s{0,3}>\s?(.*)$/);
+    if (quote) {
+      const body = [quote[1]];
+      index += 1;
+      while (index < lines.length && /^\s{0,3}>\s?/.test(lines[index])) {
+        body.push(lines[index].replace(/^\s{0,3}>\s?/, ''));
+        index += 1;
+      }
+      blocks.push({ type: 'quote', text: body.join('\n') });
+      continue;
+    }
+
+    const bullet = line.match(/^\s*([-*+])\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d{1,9})[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      const ordered = Boolean(numbered);
+      const start = numbered ? Number(numbered[1]) : 1;
+      const items = [];
+      while (index < lines.length) {
+        const next = ordered
+          ? lines[index].match(/^\s*(\d{1,9})[.)]\s+(.*)$/)
+          : lines[index].match(/^\s*([-*+])\s+(.*)$/);
+        if (!next) break;
+        items.push(next[2]);
+        index += 1;
+      }
+      blocks.push({ type: 'list', ordered, start, items });
+      continue;
+    }
+
+    // A paragraph, up to the next blank line or a line that starts another block.
+    const paragraph = [line.trim()];
+    index += 1;
+    while (index < lines.length) {
+      const candidate = lines[index];
+      if (candidate.trim() === '') break;
+      if (/^\s*(```|~~~)/.test(candidate)) break;
+      if (/^\s{0,3}#{1,6}\s+/.test(candidate)) break;
+      if (/^\s{0,3}>\s?/.test(candidate)) break;
+      if (/^\s*([-*+])\s+/.test(candidate) || /^\s*\d{1,9}[.)]\s+/.test(candidate)) break;
+      if (candidate.includes('|') && isTableSeparator(candidate)) break;
+      paragraph.push(candidate.trim());
+      index += 1;
+    }
+    blocks.push({ type: 'para', text: paragraph.join('\n') });
+  }
+
+  return blocks;
+}
+
+/**
+ * Split a line of text into inline spans.
+ *
+ * Code first, so that `**` inside `code` is code and not emphasis.
+ */
+function parseInline(text) {
+  const source = typeof text === 'string' ? text : '';
+  const spans = [];
+  const push = (span) => {
+    if (span.text === '') return;
+    const last = spans[spans.length - 1];
+    if (last && last.type === 'text' && span.type === 'text') last.text += span.text;
+    else spans.push(span);
+  };
+  let rest = source;
+
+  while (rest !== '') {
+    const code = rest.match(/^`([^`]+)`/);
+    if (code) {
+      push({ type: 'code', text: code[1] });
+      rest = rest.slice(code[0].length);
+      continue;
+    }
+    const link = rest.match(/^\[([^\]]*)\]\(([^)\s]+)\)/);
+    if (link) {
+      push({ type: 'link', text: link[1] || link[2], href: link[2] });
+      rest = rest.slice(link[0].length);
+      continue;
+    }
+    const strong = rest.match(/^\*\*([^*]+)\*\*/) || rest.match(/^__([^_]+)__/);
+    if (strong) {
+      push({ type: 'strong', text: strong[1] });
+      rest = rest.slice(strong[0].length);
+      continue;
+    }
+    const em = rest.match(/^\*([^*\s][^*]*)\*/) || rest.match(/^_([^_\s][^_]*)_/);
+    if (em) {
+      push({ type: 'em', text: em[1] });
+      rest = rest.slice(em[0].length);
+      continue;
+    }
+    // Take one character of plain text and try again from the next position.
+    const next = rest.slice(1).search(/[`*_[\]\\]/);
+    const take = next === -1 ? rest.length : next + 1;
+    push({ type: 'text', text: rest.slice(0, take) });
+    rest = rest.slice(take);
+  }
+
+  return spans;
+}
+    // ─── end markdown parser ────────────────────────────────────────────────
+
+    /** Inline spans as React nodes. */
+    function renderInline(text, keyPrefix) {
+      return parseInline(text).map((span, index) => {
+        const key = keyPrefix + '-' + index;
+        if (span.type === 'code') return h('code', { className: 'jev-md-code', key }, span.text);
+        if (span.type === 'strong') return h('strong', { key }, span.text);
+        if (span.type === 'em') return h('em', { key }, span.text);
+        if (span.type === 'link') return h('a', { className: 'jev-md-link', key, href: span.href, target: '_blank', rel: 'noreferrer' }, span.text);
+        return h('span', { key }, span.text);
+      });
+    }
+
+    /**
+     * One message body as elements.
+     *
+     * The same replies the conversation panel renders, rendered here too — a place that showed
+     * them as raw punctuation looked broken beside it. Tool calls and reasoning steps are not
+     * reproduced: this is the message text, and saying so is better than a half-copy of the
+     * conversation's own node renderers.
+     */
+    function renderMarkdown(text, keyPrefix) {
+      const blocks = parseMarkdown(text);
+      if (blocks.length === 0) return null;
+      return blocks.map((block, index) => {
+        const key = keyPrefix + '-b' + index;
+        if (block.type === 'code') {
+          return h('pre', { className: 'jev-md-pre', key }, h('code', { key: 'c' }, block.text));
+        }
+        if (block.type === 'heading') {
+          return h('div', { className: 'jev-md-h jev-md-h' + block.level, key }, renderInline(block.text, key));
+        }
+        if (block.type === 'rule') return h('hr', { className: 'jev-md-hr', key });
+        if (block.type === 'quote') {
+          return h('blockquote', { className: 'jev-md-quote', key }, renderInline(block.text, key));
+        }
+        if (block.type === 'list') {
+          const items = block.items.map((item, itemIndex) => h('li', { key: key + '-i' + itemIndex }, renderInline(item, key + '-i' + itemIndex)));
+          return block.ordered
+            ? h('ol', { className: 'jev-md-list', key, start: block.start }, items)
+            : h('ul', { className: 'jev-md-list', key }, items);
+        }
+        if (block.type === 'table') {
+          return h('table', { className: 'jev-md-table', key }, [
+            h('thead', { key: 'h' }, h('tr', null, block.head.map((cell, cellIndex) => h('th', { key: 'h' + cellIndex }, renderInline(cell, key + '-h' + cellIndex))))),
+            h('tbody', { key: 'b' }, block.rows.map((row, rowIndex) => h('tr', { key: 'r' + rowIndex },
+              row.map((cell, cellIndex) => h('td', { key: 'c' + cellIndex }, renderInline(cell, key + '-r' + rowIndex + 'c' + cellIndex)))))),
+          ]);
+        }
+        return h('p', { className: 'jev-md-p', key }, renderInline(block.text, key));
+      });
     }
 
 /** The sidebar glyph. The host supplies the square edge and the selected state. */
