@@ -43,8 +43,10 @@ window.__ModuleLoader__.load({
       '.jev-detail{flex:0 0 auto;max-height:46%;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1);padding:8px 12px}',
       '.jev-chat-input{resize:none;font:inherit}',
       // The chat panel lives in the right sidebar now, so it brings its own full-height column.
-      '.jev-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;overflow-y:auto}',
-      '.jev-chatcol{flex:0 0 340px;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--dsw-alias-border-l1)}',
+      '.jev-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;overflow:hidden}',
+      '.jev-boardpane{flex:1 1 42%;min-height:0;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1)}',
+      '.jev-framepane{flex:1 1 58%;min-height:0;display:flex;flex-direction:column}',
+      '.jev-chatcol{flex:0 0 24%;min-width:280px;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--dsw-alias-border-l1)}',
       '.jev-chatpanel{height:100%;display:flex;flex-direction:column;overflow:hidden;font-size:13px;color:var(--dsw-alias-label-primary)}',
       '.jev-chatlist{flex:1 1 auto;min-height:0;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}',
       '.jev-scroll{overflow-y:auto}',
@@ -58,7 +60,7 @@ window.__ModuleLoader__.load({
       '.jev-chat-note{font-size:12px;color:var(--dsw-alias-label-secondary)}',
       '.jev-left{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--dsw-alias-border-l1)}',
       '.jev-right{flex:0 0 340px;display:flex;flex-direction:column;min-height:0}',
-      '.jev-frame{flex:0 0 auto;height:340px;display:flex;align-items:center;justify-content:center;background:var(--dsw-alias-bg-base);overflow:hidden;border-bottom:1px solid var(--dsw-alias-border-l1)}',
+      '.jev-frame{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--dsw-alias-bg-base);overflow:hidden;border-bottom:1px solid var(--dsw-alias-border-l1)}',
       '.jev-frame img{max-width:100%;max-height:100%;object-fit:contain;display:block}',
       '.jev-meta{padding:6px 16px;border-top:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);font-size:12px;flex:0 0 auto}',
       '.jev-sec{border-bottom:1px solid var(--dsw-alias-border-l1);padding:8px 12px;flex:0 0 auto}',
@@ -383,6 +385,7 @@ window.__ModuleLoader__.load({
 
         h('div', { className: 'jev-body', key: 'body' }, [
           h('div', { className: 'jev-main', key: 'l' }, [
+            h('div', { className: 'jev-framepane', key: 'fp' }, [
             h('div', { className: 'jev-frame', key: 'f' },
               frame.url && !frame.empty
                 ? h('img', { src: frame.url, alt: '浏览器实况' })
@@ -406,6 +409,12 @@ window.__ModuleLoader__.load({
                   )))
                 : null,
             ]),
+          ]),
+
+          // The board proper, under the picture: the same column, split. The reference has the
+          // browser on top and the board beneath it, which is the order they are read in — what
+          // it is doing, then what that adds up to.
+          h('div', { className: 'jev-boardpane', key: 'board' }, [
             // Which platform is on screen, and what each one has on file. Four pools, four counts.
             platforms.length
               ? h('div', { className: 'jev-sec', key: 'plat' }, [
@@ -519,6 +528,7 @@ window.__ModuleLoader__.load({
               h('h3', { key: 'h' }, '活动轨迹'),
               h(Feed, { events, key: 'l' }),
             ]),
+          ]),
           ]),
 
           // The conversation, in its own column beside the board. It is part of this page rather
