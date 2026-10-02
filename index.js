@@ -26,6 +26,7 @@ import { Task } from './lib/task.js';
 import { sendChat, followTranscript, assertSendableText } from './lib/chat.js';
 import { PLATFORMS, platformOf } from './lib/platforms.js';
 import { workbenchAgent, registerWorkbenchPreset } from './lib/workbench-agent.js';
+import { readWorkbenchSession } from './lib/workbench-session.js';
 import { messagesOf, describeEvent, isKnownQuiet, toolResultOf } from './lib/transcript.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
@@ -243,6 +244,14 @@ export function apply(ctx, config) {
     // The workbench's chat box. The text becomes a prompt in a conversation through the
     // platform's own session controller — the same call the conversation composer makes — and
     // the answer renders in that conversation rather than in this panel.
+    // The workbench's own session. Pressed on demand, so the session is created when someone asks
+    // for the assistant rather than on every state poll.
+    assistant: async () => {
+      const controller = ctx.get?.('sessionController');
+      if (!controller) throw new Error('this Host exposes no session controller, so there is no assistant');
+      const { sessionId } = await workbenchAgent({ sessionController: controller }, {});
+      return { sessionId, preset: 'scout-workbench' };
+    },
     // The transcript, streamed to the panel so the chat box shows the exchange and not only the
     // half this plugin sent. Frames that carry no message become a one-line status; anything
     // unrecognised is counted and reported, so a silent empty panel is not possible.

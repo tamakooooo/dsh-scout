@@ -202,6 +202,21 @@ const post = (body) => fetch(new URL('chat', base), {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body),
 });
 
+await verify('the page can ask for the workbench assistant', async () => {
+  // The button on the workbench asks for the session and then hands it to the platform's own
+  // conversation panel, so this route is the only part of the assistant the page needs.
+  const response = await fetch(new URL('assistant', base));
+  // Read once: the body cannot be read twice, and an assertion message that consumes it makes the
+  // failure look like a broken body rather than a wrong answer.
+  const body = await response.text();
+  assert.equal(response.status, 200, body);
+  const value = JSON.parse(body);
+  assert.equal(value.ok, true);
+  assert.equal(typeof value.sessionId, 'string');
+  assert.ok(value.sessionId.length > 0, 'no session id came back, so there would be nothing to open');
+  assert.equal(value.preset, 'scout-workbench');
+});
+
 await verify('a message typed on the page reaches the conversation', async () => {
   sent.length = 0;
   const response = await post({ text: '筛选前 20 个候选人' });

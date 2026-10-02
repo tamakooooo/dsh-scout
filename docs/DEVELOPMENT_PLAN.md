@@ -117,6 +117,18 @@
 
 复用现有 21 个套件（schema / labels / guardrails / regressions / guards / verify / concurrency / injection / privacy / inspect / site / posting / records / recruiting / control / workers / authorize / send / run / task / recruit-tools，共 449 条断言），补实际页面 fixture、匹配断言、自主适配和并发场景；隐私扫描继续作为提交前的强制检查。重点检查：岗位更换与版本固定、缓存首次生成/复用、布局变化后自动更新、失效 ref、未知组件、同名对象、同一人被两窗同时发现、联系上限同时到达、窗口切页/关闭/恢复、单个 worker 结束、跨预设重复启动、停止/撤销、发送后超时及进程退出。新增入口与输出同时验证 Host schema。
 
+### 工作台的界面（第五稿：看板 + 用平台自己的对话面板）
+
+工作台页面就是**看板**（画面、平台、任务、数据、轨迹），顶栏一个**「打开助手对话」**按钮。
+
+助手仍然是那个专用会话（自己的身份、自己的角色提示 ✓），但**界面用平台自己的对话面板** —— 渲染、工具调用、流式、思考过程全是原生的，不再由我复刻。
+
+**为什么不能嵌进页面**：平台的 `Conversation` 组件来自内部包 `uiConversation` ✗，动态客户端插件只有 `ctx / React / host / styles / console` ✗，import 不到 ✗；而 `sidebar.chat.conversation` 那个座位由 `ui-subagent` 占用，填进去的是**子会话**的对话 ✗。所以「用现成的」的唯一诚实做法，是**去它已经在的地方** ✓。
+
+第四稿的页内对话与手写 Markdown 渲染器**已删除** ✗（`lib/markdown.js`、`test/markdown-check.mjs` 一并删掉）✓ —— 留着就是没人用的重复实现 ✓。
+
+**Host 侧的 `/chat` 与 `/chat/stream` 保留** ✓：它们是读写这个助手会话的**接口**（有测试 ✓），不是界面 ✓。
+
 ### 工作台的界面（第四稿：页面内两栏 —— 看板 + 可操作的对话框）
 
 **同**一个工作台页面里两栏：**左边是看板**（实时画面、平台、任务与窗口、数据、最近运行、活动轨迹），**右边是一个能真正对话的对话框**（消息流 + 输入框）。
