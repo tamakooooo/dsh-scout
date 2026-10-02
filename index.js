@@ -25,7 +25,7 @@ import { Records } from './lib/records.js';
 import { Task } from './lib/task.js';
 import { sendChat, followTranscript } from './lib/chat.js';
 import { PLATFORMS, platformOf } from './lib/platforms.js';
-import { normalizeFrame, describeEvent } from './lib/transcript.js';
+import { messagesOf, describeEvent, isKnownQuiet } from './lib/transcript.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
 
@@ -249,9 +249,11 @@ export function apply(ctx, config) {
         signal,
         onSession: (id) => sendFrame({ kind: 'session', sessionId: id }),
         onFrame: (frame) => {
-          const message = normalizeFrame(frame);
-          if (message) {
-            sendFrame({ kind: 'message', message });
+          // The frame may carry the whole existing conversation: the stream's first snapshot
+          // holds it, so this sends every message it found rather than one.
+          const messages = messagesOf(frame);
+          if (messages.length > 0) {
+            for (const message of messages) sendFrame({ kind: 'message', message });
             return;
           }
           const status = describeEvent(frame);
@@ -265,8 +267,11 @@ export function apply(ctx, config) {
           // sent when the loop finishes is one nobody ever sees — and an unexplained empty panel
           // is the failure this path exists to avoid. The types are named, so the reader can say
           // what arrived rather than only that something did.
-          ignored += 1;
+          // A type this panel knows and does not render is not "unrecognised", and counting it
+          // as such would make the warning fire on every healthy session until it meant nothing.
           const type = String(frame?.type === 'event' ? frame.event?.type : frame?.type ?? '?');
+          if (isKnownQuiet(type) || type === 'snapshot' || type === 'assistant-stream') return;
+          ignored += 1;
           if (!unrecognised.includes(type) && unrecognised.length < 8) unrecognised.push(type);
           sendFrame({ kind: 'unknown', count: ignored, types: unrecognised });
         },

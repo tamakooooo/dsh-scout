@@ -12,7 +12,7 @@
 import './isolate.mjs';
 import assert from 'node:assert/strict';
 
-const { textOf, normalizeFrame, appendMessage, describeEvent } = await import('../lib/transcript.js');
+const { textOf, normalizeFrame, messagesOf, appendMessage, describeEvent, isKnownQuiet } = await import('../lib/transcript.js');
 
 let failures = 0;
 async function verify(name, run) {
@@ -65,6 +65,47 @@ await verify('a history record wrapping the event reads the same as the bare eve
   const wrapped = normalizeFrame({ type: 'event', event: userEvent(1, '包一层') });
   const bare = normalizeFrame(userEvent(1, '包一层'));
   assert.deepEqual(wrapped, bare);
+});
+
+await verify('the existing conversation arrives inside the first snapshot', async () => {
+  // The real shape, read from the platform's own contract:
+  //   type SessionFollowFrame = { type:'snapshot'; records: readonly SessionHistoryRecord[]; … }
+  //                 | SessionEventEntry | { type:'assistant-stream'; frame }
+  // Reading only single events showed an empty panel on a session with plenty in it, which is
+  // exactly what the live Host did.
+  const snapshot = {
+    type: 'snapshot',
+    header: { version: 1, id: 'session-1', createdAt: 1, isSeeded: false },
+    cursor: 42,
+    hasMore: false,
+    records: [
+      { type: 'event', event: userEvent(1, '第一条') },
+      { type: 'event', event: { type: 'agent/inbox/spliced', seq: 2, time: 2, data: {} } },
+      { type: 'event', event: assistantEvent(3, '第一条回复') },
+      { type: 'event', event: userEvent(4, '第二条') },
+    ],
+  };
+  const messages = messagesOf(snapshot);
+  assert.deepEqual(messages.map((m) => [m.role, m.text]), [
+    ['user', '第一条'], ['assistant', '第一条回复'], ['user', '第二条'],
+  ]);
+  // And a frame that carries nothing yields nothing, not a blank message.
+  assert.deepEqual(messagesOf({ type: 'snapshot', records: [] }), []);
+  assert.deepEqual(messagesOf({ type: 'snapshot' }), []);
+});
+
+await verify('a single event still reads as one message', async () => {
+  assert.deepEqual(messagesOf(userEvent(7, '只有一条')).map((m) => m.text), ['只有一条']);
+  assert.deepEqual(messagesOf({ type: 'turn/start', seq: 1, data: { turn: 1 } }), []);
+});
+
+await verify('a known event that carries no message is not called unrecognised', async () => {
+  // These arrive constantly on a healthy session. Counting them as unrecognised would keep the
+  // warning on screen until it stopped meaning anything.
+  for (const type of ['agent/inbox/spliced', 'turn/start', 'turn/end', 'session/title']) {
+    assert.equal(isKnownQuiet(type), true, `${type} is counted as unrecognised`);
+  }
+  assert.equal(isKnownQuiet('something/never-seen'), false);
 });
 
 await verify('frames that are not messages produce no message', async () => {
