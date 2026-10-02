@@ -243,6 +243,7 @@ export function apply(ctx, config) {
       const controller = ctx.get?.('sessionController');
       if (!controller) throw new Error('this Host exposes no session controller, so there is nothing to read');
       let ignored = 0;
+      const unrecognised = [];
       await followTranscript({ sessionController: controller }, {
         sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined,
         signal,
@@ -256,19 +257,31 @@ export function apply(ctx, config) {
           const status = describeEvent(frame);
           // The state goes in its own field: spreading it here overwrote `kind` with 'busy',
           // and the panel compares on 'status', so it would never have seen one.
-          if (status) sendFrame({ kind: 'status', state: status.kind, text: status.text });
-          else ignored += 1;
+          if (status) {
+            sendFrame({ kind: 'status', state: status.kind, text: status.text });
+            return;
+          }
+          // Reported as it happens, never only at the end: a live stream does not end, so a count
+          // sent when the loop finishes is one nobody ever sees — and an unexplained empty panel
+          // is the failure this path exists to avoid. The types are named, so the reader can say
+          // what arrived rather than only that something did.
+          ignored += 1;
+          const type = String(frame?.type === 'event' ? frame.event?.type : frame?.type ?? '?');
+          if (!unrecognised.includes(type) && unrecognised.length < 8) unrecognised.push(type);
+          sendFrame({ kind: 'unknown', count: ignored, types: unrecognised });
         },
       });
       sendFrame({ kind: 'end', ignored });
     },
-    chat: async (message) => {
+    chat: async (message, signal) => {
       const controller = ctx.get?.('sessionController');
       if (!controller) throw new Error('this Host exposes no session controller, so there is nowhere to send');
       return sendChat({ sessionController: controller }, {
         text: typeof message?.text === 'string' ? message.text : '',
         sessionId: typeof message?.sessionId === 'string' && message.sessionId !== '' ? message.sessionId : undefined,
         mode: message?.mode === 'steer' ? 'steer' : 'queue',
+        // The platform's prompt call requires one; without it the call throws inside the Host.
+        signal,
         timeZone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; } })(),
       });
     },

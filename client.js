@@ -192,6 +192,8 @@ window.__ModuleLoader__.load({
             setStatus(frame.text || '');
           } else if (frame.kind === 'session') {
             setStreamedSession(frame.sessionId || '');
+          } else if (frame.kind === 'unknown') {
+            setStatus('已连接，但有 ' + frame.count + ' 条事件不认识：' + (frame.types || []).join('、'));
           } else if (frame.kind === 'end') {
             setStatus(frame.ignored ? '已连接（' + frame.ignored + ' 条事件未识别）' : '');
           } else if (frame.kind === 'error') {

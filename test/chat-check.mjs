@@ -87,6 +87,24 @@ await verify('the most recently active session is the one chosen', async () => {
   assert.equal(sessionIdOf(pickSession([{ id: 'other' }])), 'other');
 });
 
+await verify('the prompt is sent with an abort signal, because the platform requires one', async () => {
+  const seen = [];
+  const ctx = {
+    sessionController: {
+      async list() { return [{ sessionId: 's-1' }]; },
+      async resolveAgent() {},
+      async prompt(request, signal) { seen.push(signal); return { accepted: true }; },
+    },
+  };
+  await sendChat(ctx, { text: '你好' });
+  assert.equal(seen.length, 1);
+  // Absent is a crash on the real Host, so the caller supplies one even when it has nothing to
+  // cancel with: an un-cancellable prompt is fine, a crashing one is not.
+  const supplied = seen[0] === undefined ? null : seen[0];
+  assert.ok(supplied, 'no signal reached the platform call');
+  assert.equal(typeof supplied?.throwIfAborted, 'function', 'the signal is not a real AbortSignal');
+});
+
 await verify('sending resumes the session first, then admits the prompt', async () => {
   const ctx = fakeCtx({ sessions: [{ sessionId: 's-1', title: '适配智联' }] });
   const result = await sendChat(ctx, { text: '你好', timeZone: 'Asia/Shanghai' });
@@ -162,7 +180,13 @@ const ctx = {
   get: (key) => (key === 'sessionController' ? {
     async list() { return [{ sessionId: 's-live', title: '适配智联' }]; },
     async resolveAgent(id) { sent.push(['resolveAgent', id]); },
-    async prompt(request) {
+    async prompt(request, signal) {
+      // The real method declares `signal` as its cancellation parameter and calls into it, so
+      // omitting it is not "no cancellation" — it throws inside the Host. A stub that ignored the
+      // argument let exactly that bug through, so this one insists on it.
+      if (!signal || typeof signal.throwIfAborted !== 'function') {
+        throw new Error("Cannot read properties of undefined (reading 'throwIfAborted')");
+      }
       if (failNext) { const error = failNext; failNext = null; throw error; }
       sent.push(['prompt', request]);
       return { accepted: true };
