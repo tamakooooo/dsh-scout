@@ -23,7 +23,7 @@ import { Viewer } from './lib/viewer.js';
 import { Journal } from './lib/journal.js';
 import { Records } from './lib/records.js';
 import { Task } from './lib/task.js';
-import { sendChat, followTranscript } from './lib/chat.js';
+import { sendChat, followTranscript, assertSendableText } from './lib/chat.js';
 import { PLATFORMS, platformOf } from './lib/platforms.js';
 import { workbenchAgent, registerWorkbenchPreset } from './lib/workbench-agent.js';
 import { messagesOf, describeEvent, isKnownQuiet } from './lib/transcript.js';
@@ -296,6 +296,10 @@ export function apply(ctx, config) {
     chat: async (message, signal) => {
       const controller = ctx.get?.('sessionController');
       if (!controller) throw new Error('this Host exposes no session controller, so there is nowhere to send');
+      // Checked before anything is resolved. Resolving the agent is how the role gets installed,
+      // and doing that for a message that cannot be sent would create a session or wake an agent
+      // on the way to refusing it — the same property that had to be fixed once already.
+      assertSendableText(typeof message?.text === 'string' ? message.text : '');
       const workbench = typeof message?.sessionId === 'string' && message.sessionId !== ''
         ? message.sessionId
         : (await workbenchAgent({ sessionController: controller }, { signal })).sessionId;

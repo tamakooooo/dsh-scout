@@ -211,8 +211,10 @@ await verify('a message typed on the page reaches the conversation', async () =>
   assert.equal(value.accepted, true);
   // The workbench's own session, which the Host created here — not the session `list` offered.
   assert.equal(value.sessionId, 'session-workbench');
-  assert.deepEqual(sent.map((entry) => entry[0]), ['resolveAgent', 'prompt']);
-  const request = sent[1][1];
+  // Two resolutions and one prompt: the route resolves the agent so the role can be installed on
+  // its own context, and `sendChat` resolves the session it was given before admitting the prompt.
+  assert.deepEqual(sent.map((entry) => entry[0]), ['resolveAgent', 'resolveAgent', 'prompt']);
+  const request = sent.at(-1)[1];
   assert.equal(request.sessionId, 'session-workbench');
   assert.equal(request.mode, 'queue');
   assert.deepEqual(request.content, [{ type: 'text', text: '筛选前 20 个候选人' }]);
@@ -223,7 +225,9 @@ await verify('an empty message is refused by the route, not sent', async () => {
   const response = await post({ text: '   ' });
   assert.equal(response.status, 409);
   assert.match(await response.text(), /empty/);
-  assert.equal(sent.length, 0, 'an empty message reached the Host');
+  // Nothing at all: no session resolved, no agent woken, no prompt. The message is checked before
+  // anything is looked up, exactly so that a refusal is not also a side effect.
+  assert.deepEqual(sent, [], `an empty message touched the Host: ${JSON.stringify(sent)}`);
 });
 
 await verify('a Host that refuses the prompt reports why', async () => {
