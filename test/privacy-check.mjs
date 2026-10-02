@@ -126,7 +126,7 @@ console.log('\n=== the sanitiser ===');
 console.log('\n=== the local-data guards ===');
 {
   check('the plugin root is a real directory', existsSync(PLUGIN_ROOT));
-  check('KINDS covers the documented layout', KINDS.join(',') === 'profile,postings,sites,records,samples');
+  check('KINDS covers the documented layout', KINDS.join(',') === 'profile,postings,sites,records,samples,workbench');
 
   for (const bad of ['../escape', 'a/../../b', '/etc/passwd', 'sub/dir', '', '   ', 'nul\0byte']) {
     let threw = false;

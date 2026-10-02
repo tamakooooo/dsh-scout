@@ -25,6 +25,7 @@ import { Records } from './lib/records.js';
 import { Task } from './lib/task.js';
 import { sendChat, followTranscript } from './lib/chat.js';
 import { PLATFORMS, platformOf } from './lib/platforms.js';
+import { ensureWorkbenchSession } from './lib/workbench-session.js';
 import { messagesOf, describeEvent, isKnownQuiet } from './lib/transcript.js';
 import { createMonitor } from './lib/monitor.js';
 import { CONFIDENCE_MAX_SCORE } from './lib/act.js';
@@ -244,8 +245,14 @@ export function apply(ctx, config) {
       if (!controller) throw new Error('this Host exposes no session controller, so there is nothing to read');
       let ignored = 0;
       const unrecognised = [];
+      // The panel reads the workbench's own conversation, not whichever one was active. That is
+      // the point of it: what you say there is about the run in front of you, and it is still
+      // there tomorrow.
+      const workbench = typeof sessionId === 'string' && sessionId !== ''
+        ? sessionId
+        : (await ensureWorkbenchSession({ sessionController: controller }, { signal })).sessionId;
       await followTranscript({ sessionController: controller }, {
-        sessionId: typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined,
+        sessionId: workbench,
         signal,
         onSession: (id) => sendFrame({ kind: 'session', sessionId: id }),
         onFrame: (frame) => {
@@ -281,9 +288,12 @@ export function apply(ctx, config) {
     chat: async (message, signal) => {
       const controller = ctx.get?.('sessionController');
       if (!controller) throw new Error('this Host exposes no session controller, so there is nowhere to send');
+      const workbench = typeof message?.sessionId === 'string' && message.sessionId !== ''
+        ? message.sessionId
+        : (await ensureWorkbenchSession({ controller, sessionController: controller }, { signal })).sessionId;
       return sendChat({ sessionController: controller }, {
         text: typeof message?.text === 'string' ? message.text : '',
-        sessionId: typeof message?.sessionId === 'string' && message.sessionId !== '' ? message.sessionId : undefined,
+        sessionId: workbench,
         mode: message?.mode === 'steer' ? 'steer' : 'queue',
         // The platform's prompt call requires one; without it the call throws inside the Host.
         signal,

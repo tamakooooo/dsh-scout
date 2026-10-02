@@ -47,6 +47,8 @@ window.__ModuleLoader__.load({
       '.jev-boardpane{flex:1 1 42%;min-height:0;overflow-y:auto;border-top:1px solid var(--dsw-alias-border-l1)}',
       '.jev-framepane{flex:1 1 58%;min-height:0;display:flex;flex-direction:column}',
       '.jev-chatcol{flex:0 0 24%;min-width:280px;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--dsw-alias-border-l1)}',
+      '.jev-chathead{flex:0 0 auto;display:flex;align-items:baseline;gap:8px;padding:8px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}',
+      '.jev-chathead-title{font-weight:600}',
       '.jev-chatpanel{height:100%;display:flex;flex-direction:column;overflow:hidden;font-size:13px;color:var(--dsw-alias-label-primary)}',
       '.jev-chatlist{flex:1 1 auto;min-height:0;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}',
       '.jev-scroll{overflow-y:auto}',
@@ -237,6 +239,13 @@ window.__ModuleLoader__.load({
       };
 
       return h('div', { className: 'jev-chatpanel' }, [
+        // Said plainly, because it is the point: this is not the conversation you are in. It is
+        // one session of its own, kept for this workbench, and what you tell it is about the run
+        // in front of you.
+        h('div', { className: 'jev-chathead', key: 'h' }, [
+          h('span', { className: 'jev-chathead-title', key: 't' }, 'AI 助手 · 专用'),
+          h('span', { className: 'jev-dim', key: 's' }, sessionId ? sessionId.slice(0, 12) : '尚未建立'),
+        ]),
         h('div', { className: 'jev-chatlist', key: 'l', ref: listRef }, [
           log.length === 0
             ? h('div', { className: 'jev-dim', key: 'e', style: { padding: '12px' } },
@@ -275,7 +284,7 @@ window.__ModuleLoader__.load({
             }, busy ? '…' : '发送'),
           ]),
           h('div', { className: 'jev-chat-note', key: 'n' },
-            note || (sessionId ? '对话 ' + sessionId.slice(0, 8) : '回车发送')),
+            note || '只用于操作这个工作台'),
         ]),
       ]);
     }

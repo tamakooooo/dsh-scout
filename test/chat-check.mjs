@@ -178,6 +178,8 @@ const ctx = {
   logger: { debug() {} },
   inject: () => () => {},
   get: (key) => (key === 'sessionController' ? {
+    // The panel's conversation is the workbench's own, so the Host must be able to produce one.
+    async create(request) { return { sessionId: request?.sessionId ?? 'session-workbench' }; },
     async list() { return [{ sessionId: 's-live', title: '适配智联' }]; },
     async resolveAgent(id) { sent.push(['resolveAgent', id]); },
     async prompt(request, signal) {
@@ -207,11 +209,11 @@ await verify('a message typed on the page reaches the conversation', async () =>
   assert.equal(response.status, 200, JSON.stringify(value));
   assert.equal(value.ok, true);
   assert.equal(value.accepted, true);
-  assert.equal(value.sessionId, 's-live');
-  assert.equal(value.session, '适配智联');
+  // The workbench's own session, which the Host created here — not the session `list` offered.
+  assert.equal(value.sessionId, 'session-workbench');
   assert.deepEqual(sent.map((entry) => entry[0]), ['resolveAgent', 'prompt']);
   const request = sent[1][1];
-  assert.equal(request.sessionId, 's-live');
+  assert.equal(request.sessionId, 'session-workbench');
   assert.equal(request.mode, 'queue');
   assert.deepEqual(request.content, [{ type: 'text', text: '筛选前 20 个候选人' }]);
 });
@@ -250,6 +252,7 @@ const streamCtx = {
   logger: { debug() {} },
   inject: () => () => {},
   get: (key) => (key === 'sessionController' ? {
+    async create(request) { return { sessionId: request?.sessionId ?? 'session-workbench' }; },
     async list() { return [{ sessionId: 's-live', title: '适配智联' }]; },
     follow(request, signal) {
       streamed.push(request);
@@ -282,7 +285,9 @@ await verify('the panel is told which session it is reading, before the stream e
   const frames = await readStream(new URL('chat/stream', streamHandle.viewer.url));
   const session = frames.find((frame) => frame.kind === 'session');
   assert.ok(session, `no session frame: ${JSON.stringify(frames)}`);
-  assert.equal(session.sessionId, 's-live');
+  // The workbench's own conversation — created for this purpose — not the session that happened
+  // to be most recently active. The stub's `list` offers 's-live' and it must not be used.
+  assert.equal(session.sessionId, 'session-workbench');
   // The session frame must not be last: a live stream never ends, so a panel that only learned
   // it at the end would never learn it at all.
   assert.notEqual(frames[frames.length - 1].kind, 'session', 'the session was reported only at the end');
@@ -302,7 +307,7 @@ await verify('the exchange arrives as messages and statuses, and unknowns are co
 await verify('the stream asks for the recent messages, without a cursor', async () => {
   assert.equal(streamed.length >= 2, true);
   const request = streamed[0];
-  assert.deepEqual(request.address, { kind: 'session', sessionId: 's-live' });
+  assert.deepEqual(request.address, { kind: 'session', sessionId: 'session-workbench' });
   assert.equal(request.assistantStream, true);
   assert.ok(request.maxMessages > 0);
   assert.equal('throughSeq' in request, false, 'a cursor was sent, which the stream does not take');
@@ -312,6 +317,7 @@ await verify('a stream that breaks says so rather than showing nothing', async (
   const brokenCtx = {
     tools: { register() {} }, effect: () => {}, logger: { debug() {} }, inject: () => () => {},
     get: (key) => (key === 'sessionController' ? {
+      async create(request) { return { sessionId: request?.sessionId ?? 'session-workbench' }; },
       async list() { return [{ sessionId: 's-live' }]; },
       follow() { return (async function* generate() { yield { type: 'turn/start', seq: 1, data: { turn: 1 } }; throw new Error('the session log was pruned'); })(); },
     } : undefined),
